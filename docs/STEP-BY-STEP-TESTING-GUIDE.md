@@ -4,10 +4,21 @@ This guide is for running and manually demonstrating the current local-developme
 
 For endpoint-by-endpoint API checks, example `curl` commands, authorization cases, and broader release testing, use the [API and feature test plan](./API-AND-FEATURE-TEST-PLAN.md).
 
+## Clone the repository first
+
+Use the plain clone URL below. Do not copy Markdown link punctuation such as square brackets, parentheses, or a trailing quote as part of the URL:
+
+```sh
+git clone https://github.com/quana-ai/Travelogue-.git
+cd Travelogue-
+```
+
+If GitHub reports **Repository not found**, first check that the URL is exactly `https://github.com/quana-ai/Travelogue-.git`. If the repository is private, the repository owner or organization admin must invite your GitHub account as a collaborator or add it to a team with repository access. Sign in to GitHub in your Git credential manager or use the approved organization authentication method, then retry. Do not put a personal access token in the clone URL or share it in chat.
+
 ## 1. Prerequisites
 
 - Node.js 22.13 or newer and npm installed.
-- A terminal opened at the repository root.
+- Git installed and a terminal opened at the cloned repository root.
 - Dependencies installed in both `frontend/` and `backend/` if this is a fresh checkout.
 - The backend environment configured before starting the API.
 
