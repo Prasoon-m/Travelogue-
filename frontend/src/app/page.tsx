@@ -102,6 +102,7 @@ export default function Home() {
 
   /* --- user --- */
   const [user, setUser] = useState({ first: 'User', initials: 'U', name: 'User', id: '' });
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
 
   /* --- nav / screens --- */
   const [screen, setScreen] = useState<Screen>('auth');
@@ -171,6 +172,7 @@ export default function Home() {
   const [shareExpiry, setShareExpiry] = useState('Never');
   const [shareNewMode, setShareNewMode] = useState<'e' | 'm'>('e');
   const [shareNewVal, setShareNewVal] = useState('');
+  const [shareRecipientSelection, setShareRecipientSelection] = useState('');
   const [pkMsg, setPkMsg] = useState('');
   const [sharedViewBill, setSharedViewBill] = useState<any>(null);
 
@@ -478,20 +480,14 @@ export default function Home() {
   };
 
   /* ===================== SCAN / CAMERA ===================== */
-  const goScan = async () => {
-    const isMobile = window.matchMedia('(pointer:coarse)').matches;
-    if (isMobile) {
-      openCam();
-      return;
-    }
+  const goScan = () => {
     show('scan');
     setCamActive(false);
     setCamMsg('');
-    // Auto-start camera on desktop
     setTimeout(async () => {
       setCamMsg('<spin>');
       if (!navigator.mediaDevices?.getUserMedia) {
-        setCamMsg('err:This device or browser does not support camera capture.');
+        setCamMsg('err:Live camera preview is unavailable in this browser. Use the device camera button below or upload a file.');
         return;
       }
       try {
@@ -504,7 +500,7 @@ export default function Home() {
         setCamActive(true);
         setCamMsg('');
       } catch {
-        setCamMsg('err:Camera access was blocked or is unavailable. Allow camera permission in your browser, or tap Scan Bill below to use your phone camera.');
+        setCamMsg('err:Camera access was blocked or is unavailable. Allow camera permission, use the device camera button below, or upload a file.');
       }
     }, 50);
   };
@@ -733,6 +729,7 @@ export default function Home() {
 
   const logout = () => {
     stopCam();
+    setProfileMenuOpen(false);
     if (toastTimer.current) clearTimeout(toastTimer.current);
     removeToken();
     setUser({ first: 'User', initials: 'U', name: 'User', id: '' });
@@ -915,12 +912,18 @@ export default function Home() {
     setShareExpiry('Never');
     setShareMsg('');
     setShareNewVal('');
+    setShareRecipientSelection('');
     setShareNewMode('e');
+    setProfileMenuOpen(false);
     setModal('share');
   };
 
   const doShare = async () => {
-    const recipient = shareNewVal.trim();
+    const recipient = (shareRecipientSelection === '__new__' ? shareNewVal : shareRecipientSelection).trim();
+    if (!recipient) {
+      setShareMsg('Select a person or choose Add someone new.');
+      return;
+    }
     let to = recipient;
     if (shareNewMode === 'e') {
       if (!/^\S+@\S+\.\S+$/.test(recipient)) {
@@ -991,17 +994,27 @@ export default function Home() {
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (!(e.target as HTMLElement).closest('.ms') && msOpen) setMsOpen(false);
+      if (!(e.target as HTMLElement).closest('.profile-menu-wrap')) setProfileMenuOpen(false);
     };
     const kHandler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setMsOpen(false);
         setMobileFilter(null);
+        setProfileMenuOpen(false);
+        setModal('none');
       }
     };
     document.addEventListener('click', handler);
     document.addEventListener('keydown', kHandler);
     return () => { document.removeEventListener('click', handler); document.removeEventListener('keydown', kHandler); };
   }, [msOpen]);
+
+  useEffect(() => {
+    if (modal === 'none') return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, [modal]);
 
   useEffect(() => {
     if (!mobileFilter) return;
@@ -1084,6 +1097,7 @@ export default function Home() {
     ? (() => { const b = bills.find(x => String(x.id) === shareId); return b ? b.m + ' · ' + fdate(b.date) : ''; })()
     : (() => { const n = bills.filter(x => x.cont === shareId).length; return shareId + ' · ' + n + ' bill' + (n === 1 ? '' : 's'); })();
   const sharedWith = shRecips(shareKey);
+  const knownShareContacts = [...new Set(Object.values(shares).flat().map((share) => share.to))].sort();
 
   /* ===================== MAIN RENDER ===================== */
   return (
@@ -1097,9 +1111,8 @@ export default function Home() {
         {/* ===== SIDEBAR ===== */}
         {!isAuth && (
           <aside className="side">
-            <div className="logo">
+            <div className="logo" aria-label="Travelogue">
               <AppMark />
-              Expense Manager
             </div>
             <nav>
               {NAV_ITEMS.map(n => (
@@ -1119,9 +1132,8 @@ export default function Home() {
               {showBack && (
                 <button className="back" onClick={goBack} aria-label="Go back">‹ Back</button>
               )}
-              <div className="brand">
+              <div className="brand" aria-label="Travelogue">
                 <AppMark />
-                <span>Expense Manager</span>
               </div>
             </div>
             <div className="tr">
@@ -1130,13 +1142,30 @@ export default function Home() {
               </button>
               {!isAuth && (
                 <>
-                  <span className="usr">
-                    <i id="uav">{user.initials}</i>
-                    <span id="uname">{user.first}</span>
-                  </span>
-                  <button className="tbtn logout-btn" onClick={logout} aria-label="Log out">
-                    <span aria-hidden="true">↪</span><span className="logout-label">Log out</span>
-                  </button>
+                  <div className="profile-menu-wrap">
+                    <button
+                      type="button"
+                      className="profile-trigger"
+                      aria-haspopup="menu"
+                      aria-expanded={profileMenuOpen}
+                      aria-label={`Profile menu for ${user.name}`}
+                      onClick={() => setProfileMenuOpen((open) => !open)}
+                    >
+                      <span className="usr">
+                        <i id="uav">{user.initials}</i>
+                        <span id="uname">{user.first}</span>
+                      </span>
+                      <span className="profile-chevron" aria-hidden="true">▾</span>
+                    </button>
+                    {profileMenuOpen && (
+                      <div className="profile-menu" role="menu">
+                        <span className="profile-menu-name">{user.name}</span>
+                        <button type="button" role="menuitem" className="logout-btn" onClick={logout}>
+                          <span aria-hidden="true">↪</span> Log out
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </>
               )}
             </div>
@@ -1236,7 +1265,7 @@ export default function Home() {
                 {camMsg === '<spin>' && <div className="spin" />}
                 <div className="acts">
                   {camActive && <button className="btn p" onClick={capture}>Capture</button>}
-                  <button className="btn p" onClick={openCam}>Scan Bill</button>
+                  <button className="btn p" onClick={openCam}>Use device camera</button>
                   <button className="btn" onClick={goUpload}>Upload Bill</button>
                 </div>
               </div>
@@ -1793,55 +1822,82 @@ export default function Home() {
 
       {/* Share Modal */}
       {modal === 'share' && (
-        <dialog open onClick={e => { if (e.target === e.currentTarget) setModal('none'); }}>
-          <button className="x" onClick={() => setModal('none')} aria-label="Close">×</button>
-          <h2>{shareTitle}</h2>
-          <p className="mut sm" style={{ marginBottom: 10 }}>{shareSub}</p>
-          <p style={{ margin: '0 0 4px' }}>
-            <span className="pill acc cnt2">
-              <ShareIcon />
-              {sharedWith.length ? 'Shared with ' + sharedWith.length + (sharedWith.length === 1 ? ' person' : ' people') : 'Not shared yet'}
-            </span>
-          </p>
-          <div className="seg" role="group" aria-label="Recipient type">
-            <button type="button" className={shareNewMode === 'e' ? 'on' : ''} onClick={() => setShareNewMode('e')}>Email</button>
-            <button type="button" className={shareNewMode === 'm' ? 'on' : ''} onClick={() => setShareNewMode('m')}>WhatsApp</button>
-          </div>
-          <label htmlFor="share-recipient">{shareNewMode === 'e' ? 'Recipient email address' : 'Recipient WhatsApp number'}</label>
-          <input id="share-recipient" type="text" inputMode={shareNewMode === 'e' ? 'email' : 'tel'} placeholder={shareNewMode === 'e' ? 'name@company.com' : '+91 9876543210'} value={shareNewVal} onChange={e => setShareNewVal(e.target.value)} />
-          {shareMsg && <div className={`msg ${shareMsg.startsWith('Shared') ? 'info' : 'err'}`}>{shareMsg}</div>}
-          <label htmlFor="she">Access ends</label>
-          <select id="she" value={shareExpiry} onChange={e => setShareExpiry(e.target.value)}>
-            {EXPIRY_OPTS.map(o => <option key={o}>{o}</option>)}
-          </select>
-          <p className="mut sm" style={{ margin: '12px 0 0' }}>
-            The recipient must sign in with this exact contact. No email or WhatsApp notification is sent yet. They can view and download only, not edit or delete.{shareType === 'v' ? ' All bills in this view are included.' : ''}
-          </p>
-          <div className="acts">
-            <button className="btn p ic" onClick={doShare}><ShareIcon />Share</button>
-            <button className="btn" onClick={() => setModal('none')}>Close</button>
-          </div>
-          <h2 style={{ marginTop: 22 }}>Shared with ({sharedWith.length})</h2>
-          <div>
-            {sharedWith.length ? sharedWith.map((x: any) => {
-              const c = cOf(x.to);
-              return (
-                <div key={x.to} className="shrow">
-                  <span style={{ display: 'flex', gap: 10, alignItems: 'center', minWidth: 0 }}>
-                    <i className="av">{ini(c.name)}</i>
-                    <span style={{ minWidth: 0 }}>
-                      <b>{c.name}</b>
-                      <span className="sm mut" style={{ overflowWrap: 'anywhere' }}>
-                        {c.email !== c.name ? c.email + ' · ' : ''}View only · {x.end}{x.via ? ' · via view ' + x.via : ''}
+        <div className="share-backdrop" onClick={e => { if (e.target === e.currentTarget) setModal('none'); }}>
+          <section className="share-dialog" role="dialog" aria-modal="true" aria-labelledby="share-dialog-title">
+            <button className="x" onClick={() => setModal('none')} aria-label="Close">×</button>
+            <h2 id="share-dialog-title">{shareTitle}</h2>
+            <p className="mut sm" style={{ marginBottom: 10 }}>{shareSub}</p>
+            <p style={{ margin: '0 0 4px' }}>
+              <span className="pill acc cnt2">
+                <ShareIcon />
+                {sharedWith.length ? 'Shared with ' + sharedWith.length + (sharedWith.length === 1 ? ' person' : ' people') : 'Not shared yet'}
+              </span>
+            </p>
+            <label htmlFor="share-person">Share with</label>
+            <select
+              id="share-person"
+              value={shareRecipientSelection}
+              onChange={e => {
+                const value = e.target.value;
+                setShareRecipientSelection(value);
+                if (value === '__new__' || !value) {
+                  setShareNewVal('');
+                  setShareNewMode('e');
+                } else {
+                  setShareNewVal(value);
+                  setShareNewMode(value.includes('@') ? 'e' : 'm');
+                }
+                setShareMsg('');
+              }}
+            >
+              <option value="">Select a person</option>
+              {knownShareContacts.map(contact => <option key={contact} value={contact}>{contact}</option>)}
+              <option value="__new__">+ Add someone new</option>
+            </select>
+            {shareRecipientSelection === '__new__' && (
+              <>
+                <div className="seg" role="group" aria-label="New recipient type">
+                  <button type="button" className={shareNewMode === 'e' ? 'on' : ''} onClick={() => setShareNewMode('e')}>Email</button>
+                  <button type="button" className={shareNewMode === 'm' ? 'on' : ''} onClick={() => setShareNewMode('m')}>WhatsApp</button>
+                </div>
+                <label htmlFor="share-recipient">{shareNewMode === 'e' ? 'Recipient email address' : 'Recipient WhatsApp number'}</label>
+                <input id="share-recipient" type="text" inputMode={shareNewMode === 'e' ? 'email' : 'tel'} placeholder={shareNewMode === 'e' ? 'name@company.com' : '+91 9876543210'} value={shareNewVal} onChange={e => setShareNewVal(e.target.value)} />
+              </>
+            )}
+            {shareMsg && <div className={`msg ${shareMsg.startsWith('Shared') ? 'info' : 'err'}`}>{shareMsg}</div>}
+            <label htmlFor="she">Access ends</label>
+            <select id="she" value={shareExpiry} onChange={e => setShareExpiry(e.target.value)}>
+              {EXPIRY_OPTS.map(o => <option key={o}>{o}</option>)}
+            </select>
+            <p className="mut sm" style={{ margin: '12px 0 0' }}>
+              The recipient must sign in with this exact contact. No email or WhatsApp notification is sent yet. They can view and download only, not edit or delete.{shareType === 'v' ? ' All bills in this view are included.' : ''}
+            </p>
+            <div className="acts">
+              <button className="btn p ic" onClick={doShare}><ShareIcon />Share</button>
+              <button className="btn" onClick={() => setModal('none')}>Close</button>
+            </div>
+            <h2 style={{ marginTop: 22 }}>Shared with ({sharedWith.length})</h2>
+            <div>
+              {sharedWith.length ? sharedWith.map((x: any) => {
+                const c = cOf(x.to);
+                return (
+                  <div key={x.to} className="shrow">
+                    <span style={{ display: 'flex', gap: 10, alignItems: 'center', minWidth: 0 }}>
+                      <i className="av">{ini(c.name)}</i>
+                      <span style={{ minWidth: 0 }}>
+                        <b>{c.name}</b>
+                        <span className="sm mut" style={{ overflowWrap: 'anywhere' }}>
+                          {c.email !== c.name ? c.email + ' · ' : ''}View only · {x.end}{x.via ? ' · via view ' + x.via : ''}
+                        </span>
                       </span>
                     </span>
-                  </span>
-                  {!x.via && x.id && <button className="btn" onClick={() => void unshare(x.id)}>Remove</button>}
-                </div>
-              );
-            }) : <p className="mut sm">Not shared with anyone yet.</p>}
-          </div>
-        </dialog>
+                    {!x.via && x.id && <button className="btn" onClick={() => void unshare(x.id)}>Remove</button>}
+                  </div>
+                );
+              }) : <p className="mut sm">Not shared with anyone yet.</p>}
+            </div>
+          </section>
+        </div>
       )}
 
       {/* Shared Bill Detail Modal (view-only) */}

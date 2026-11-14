@@ -13,13 +13,13 @@ Be explicit that this implementation is a working MVP/demo, not a production-rea
 Show this sequence in the live demo:
 
 1. Choose email or WhatsApp, then sign in with the local development OTP.
-2. Capture or upload a bill.
+2. Choose Scan Bill and show the camera-first screen; capture a photo or use the separate upload option.
 3. Show the processing and extraction status.
 4. Explain the confidence labels and correct a field during review.
 5. Save the bill into a view/category.
 6. Search and filter the saved bill.
 7. On a mobile viewport, show the views/category/date filter bottom sheets and that only one is open at a time.
-8. Share a bill or view with another account and show the incoming share.
+8. Share a bill or view from the centered popup with another account and show the incoming share. The current build reuses contacts from previous shares or accepts a new email/WhatsApp contact; it does not have a preloaded company directory or names.
 9. Revoke the share and show that it is no longer active, then demonstrate Log out.
 
 ### 3. Explain the architecture in one minute
@@ -47,6 +47,8 @@ Show this sequence in the live demo:
 - Start both the API and frontend and sign in before the meeting.
 - Use a disposable demo account and non-sensitive sample files.
 - Have a second browser profile ready for incoming-share testing.
+- The recipient picker is populated from contacts already used in shares. If demonstrating reuse, create a first share to the demo account before the meeting; do not present invented sample names as a real address book.
+- Show logout by opening the profile control in the header.
 - Use a clear sample image or PDF. OCR runs on the uploaded file, but field parsing is heuristic; verify the detected details against the sample and correct at least one field. Do not promise specific extraction results.
 - If demonstrating mobile filters, use a mobile viewport and test the views, category, and date sheets before presenting.
 - Make sure the API is available and the local OTP response is visible; no email or WhatsApp message is actually sent.

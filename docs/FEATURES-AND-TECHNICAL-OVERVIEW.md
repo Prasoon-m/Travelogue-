@@ -12,9 +12,9 @@ This guide describes the application currently present in this repository. The p
 |---|---|---|
 | Sign up and sign in | Passwordless flow using an email address or WhatsApp number and a one-time code. A user profile and default views are created as needed. | Functional for local development. The UI distinguishes email from WhatsApp numbers. Local mode does not send a message; production delivery is not configured. |
 | Session restoration | Keeps the JWT and basic user profile in browser local storage and restores the session on reload. | Functional. |
-| Log out | Clears the local JWT/profile and in-memory bill/share data, then returns to sign in. | Implemented. |
+| Log out | Clears the local JWT/profile and in-memory bill/share data, then returns to sign in. | Available from the profile menu in the header. |
 | Dashboard and navigation | Provides the signed-in starting point and navigation among capture, bills, views, categories, and sharing workflows. | Implemented in the existing responsive frontend. |
-| Bill capture | Provides the bill capture/upload workflow, including image selection and browser camera support where available. | Connected to the upload API. Camera access depends on browser permission and device support. |
+| Bill capture | Provides the bill capture/upload workflow, including image selection and browser camera support where available. | Scan opens a camera-first screen with a live preview when browser permissions/device support allow it; a device-camera picker and file-upload fallback remain available. |
 | Bill upload | Accepts image files and PDFs up to 10 MB and records the MIME type. | Functional; uploads are encrypted before being written to local disk. |
 | OCR processing workflow | Moves a new bill through processing, extraction, review, and confirmation states. The UI polls the API for the extraction result. | Uses local Tesseract.js text recognition for uploaded images and PDF pages. It does not call an external OCR API. |
 | OCR review and correction | Estimates merchant, date, invoice number, total, tax, currency, and payment details from recognized text. The user can correct values before saving. | Best-effort rule-based parsing. Detected values are marked uncertain and require human review; no accuracy benchmark is available. |
@@ -23,9 +23,11 @@ This guide describes the application currently present in this repository. The p
 | Views | Groups bills into named collections such as a trip, work event, or personal expenses. Supports creating views and assigning/moving bills. | Functional and persisted in SQLite. |
 | Categories and subcategories | Organizes expenses by type, with support for categories and subcategory choices. | Functional and persisted through the categories API. |
 | Personal expense marker | Marks a bill as personal during the review/save workflow. | Persisted with the bill. |
-| Bill sharing | Grants read-only access to a bill or view for a recipient identified by email or phone. Expiry choices include 7, 30, 90 days, or never. Owners can see and revoke outgoing shares. | Access is persisted and revocable. No email/WhatsApp notification is sent; this is not an anonymous public-link feature. |
+| Bill sharing | Grants read-only access to a bill or view for a recipient identified by email or phone. Expiry choices include 7, 30, 90 days, or never. Owners can see and revoke outgoing shares. | Opens in a centered modal from bill and view share actions. The recipient selector reuses contacts from existing shares or lets the user enter a new contact; this build has no company contact directory or recipient display-name data. No email/WhatsApp notification is sent; this is not an anonymous public-link feature. |
 | Incoming shares | Shows active bills/views shared with the signed-in user and their owner. | Functional when the share recipient contact matches the signed-in user. |
 | Responsive UI and theme | Existing interface adapts to mobile, tablet, and desktop sizes and has light/dark theme state. | Mobile bill filters are implemented as one-at-a-time bottom sheets. Authenticated interaction and layout still need manual verification at the target breakpoints in the testing guide. |
+
+The header uses the app mark without the redundant “Expense Manager” text. The back control is compact, and logout is available from the profile menu.
 
 ## What OCR means in this build
 

@@ -75,20 +75,21 @@ Expected: Next.js serves the app at `http://localhost:3000`. If the API is not a
 5. Confirm that the authenticated dashboard loads.
 6. Reload the page and confirm the session is restored.
 
-The OTP is a fixed development code. No email or WhatsApp message is sent. Do not use this flow as production authentication.
+The OTP is a fixed development code. No email or WhatsApp message is sent. Do not use this flow as production authentication. Verify logout from the profile menu in the header, then sign in again if continuing the test.
 
 ## 5. Test bill capture, upload, and review
 
-1. Open the scan/capture workflow.
-2. Select an image or PDF, or try camera capture if the browser/device supports it and permission is granted.
-3. Upload the bill. The backend accepts images and PDFs up to 10 MB.
-4. Wait for processing. The app polls the extraction endpoint.
-5. Review the extracted merchant, date, bill number, total, tax, currency, payment method, and confidence indicators.
-6. Edit at least one field to confirm manual correction works.
-7. Select a view/category and set the personal marker if desired.
-8. Confirm/save the bill.
-9. Verify the bill appears in the bill list with an appropriate status.
-10. Open the bill file and confirm the uploaded image/PDF can be retrieved.
+1. Choose **Scan Bill**. It should open the scan screen and request camera permission for a live preview when supported.
+2. Capture a photo from the live preview, or use **Use device camera** as a camera-picker fallback. Confirm the capture goes to bill preview before upload; it should not start OCR/upload automatically.
+3. To test gallery/file upload separately, choose **Upload Bill** and select an image or PDF.
+4. From preview, continue to upload the bill. The backend accepts images and PDFs up to 10 MB.
+5. Wait for processing. The app polls the extraction endpoint.
+6. Review the extracted merchant, date, bill number, total, tax, currency, payment method, and confidence indicators.
+7. Edit at least one field to confirm manual correction works.
+8. Select a view/category and set the personal marker if desired.
+9. Confirm/save the bill.
+10. Verify the bill appears in the bill list with an appropriate status.
+11. Open the bill file and confirm the uploaded image/PDF can be retrieved.
 
 **OCR test expectation:** the backend runs Tesseract.js locally using a bundled English model. It recognizes image content and renders PDF pages locally (up to 10 pages) before recognition. Text patterns estimate common receipt fields; values are marked uncertain and require manual correction. Test with clear, non-sensitive receipt images and PDFs. OCR accuracy has not been benchmarked, and multilingual receipts or unusual layouts may produce missing or incorrect fields.
 
@@ -106,14 +107,15 @@ The OTP is a fixed development code. No email or WhatsApp message is sent. Do no
 ## 7. Test sharing with two accounts
 
 1. In the first browser/session, sign in as account A and create a bill or view to share.
-2. In the sharing workflow, enter the exact email or phone contact for account B.
-3. Select one expiry option (7, 30, 90 days, or never) and create the share.
-4. Confirm it appears under outgoing shares.
-5. Open a private/incognito browser window or another browser profile and sign in as account B using the same contact used in the share.
-6. Open incoming shares and verify the shared bill/view is visible.
-7. Confirm account B can read shared content but cannot modify or revoke account A’s share.
-8. Return to account A and revoke the share.
-9. Confirm it disappears from outgoing shares and is no longer available as an active incoming share.
+2. From a bill row, bill details, or a view, open Share. Confirm it appears as a centered popup, not attached to the bottom of the screen.
+3. Select a previously used recipient contact, or choose **+ Add someone new** and enter account B’s exact email or phone contact. This build does not provide a preloaded company contact directory or names; saved contacts come from existing shares.
+4. Select one expiry option (7, 30, 90 days, or never) and create the share.
+5. Confirm the recipient count/list updates and the share appears under outgoing shares.
+6. Open a private/incognito browser window or another browser profile and sign in as account B using the same contact used in the share.
+7. Open incoming shares and verify the shared bill/view is visible.
+8. Confirm account B can read shared content but cannot modify or revoke account A’s share.
+9. Return to account A and revoke the share.
+10. Confirm it disappears from outgoing shares and is no longer available as an active incoming share.
 
 Sharing is authenticated and contact-based; there is no anonymous URL that can be opened without signing in.
 
@@ -135,7 +137,7 @@ Use browser developer tools to check approximate widths:
 - Tablet: 768px
 - Desktop: 1280px
 
-At each width, inspect navigation, upload/review form, bill list, filters, sharing dialogs, and buttons. On mobile, open the views, category, and date filters one at a time; confirm each opens as a bottom sheet, can be dismissed, and applying a selection updates the list. Verify controls remain visible, usable, and do not overlap. In an authenticated session, use Log out and confirm the app returns to sign-in; sign in again to continue checks. Also test browser zoom and keyboard focus where time permits.
+At each width, inspect navigation, upload/review form, bill list, filters, sharing dialogs, and buttons. Confirm the share popup remains centered and its content scrolls within the popup on narrow screens. On mobile, open the views, category, and date filters one at a time; confirm each opens as a bottom sheet, can be dismissed, and applying a selection updates the list. Verify controls remain visible, usable, and do not overlap. In an authenticated session, open the profile menu and use Log out; confirm the app returns to sign-in. Also test browser zoom and keyboard focus where time permits.
 
 ## 10. Build checks
 
