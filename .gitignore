@@ -1,0 +1,13 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+node_modules/
+.next/
+dist/
+coverage
+.tesseract-cache/
+*.log
+*.tsbuildinfo
+backend/prisma/*.db
+backend/uploads/

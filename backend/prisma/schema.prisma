@@ -1,0 +1,101 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// 1. User Account (Passwordless via Email or Mobile)
+model User {
+  id        String   @id @default(uuid())
+  contact   String   @unique // email or mobile number
+  name      String?
+  createdAt DateTime @default(now())
+  
+  views     View[]
+  bills     Bill[]
+  shares    Share[]  @relation("ReceivedShares")
+}
+
+// 2. OTP Store (Salted hash, expires in 5 minutes)
+model OtpCode {
+  id        String   @id @default(uuid())
+  contact   String
+  codeHash  String
+  attempts  Int      @default(0)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+// 3. Views / Containers (e.g., "Mumbai Client Visit", "Personal")
+model View {
+  id        String   @id @default(uuid())
+  name      String
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bills     Bill[]
+  shares    Share[]
+  createdAt DateTime @default(now())
+}
+
+// 4. Category & Subcategory Catalog
+model Category {
+  id            String   @id @default(uuid())
+  name          String   @unique
+  subcategories String   // JSON array string: ["Flights", "Taxi and Cab"]
+}
+
+// 5. Bill Record
+model Bill {
+  id             String    @id @default(uuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  viewId         String?
+  view           View?     @relation(fields: [viewId], references: [id], onDelete: SetNull)
+  category       String?
+  subcategory    String?
+  isPersonal     Boolean   @default(false)
+
+  // Encrypted sensitive fields (AES-256-GCM ciphertext + IV + Tag)
+  encryptedMerchant String?
+  encryptedBillNo   String?
+  encryptedTotal    String?
+  encryptedTax      String?
+  encryptedPayment  String?
+
+  // Plain metadata for fast indexing & filtering
+  date           String?   // Format: YYYY-MM-DD
+  currency       String    @default("INR")
+  status         String    @default("PROCESSING") // PROCESSING, READY_FOR_REVIEW, VERIFIED, NEEDS_REVIEW
+
+  // Stored file info
+  filePath       String
+  fileHash       String    // SHA-256 of original file for integrity
+  mimeType       String    @default("application/octet-stream")
+
+  // OCR extraction confidence metadata (JSON string of found/uncertain/missing)
+  extractionMeta String?
+
+  shares         Share[]
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+// 6. Sharing (Granular read-only access with expiration)
+model Share {
+  id        String    @id @default(uuid())
+  viewId    String?
+  view      View?     @relation(fields: [viewId], references: [id], onDelete: Cascade)
+  billId    String?
+  bill      Bill?     @relation(fields: [billId], references: [id], onDelete: Cascade)
+
+  recipientContact String // Email or mobile shared with
+  recipientId      String?
+  recipient        User?  @relation("ReceivedShares", fields: [recipientId], references: [id], onDelete: SetNull)
+
+  expiresAt        DateTime? // null = 'Never', or 7, 30, 90 days
+  createdAt        DateTime  @default(now())
+}
