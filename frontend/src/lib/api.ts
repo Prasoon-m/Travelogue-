@@ -53,7 +53,10 @@ async function request(endpoint: string, options: RequestInit = {}) {
   const data = await res.json().catch(() => ({}));
 
   if (!res.ok) {
-    throw new Error(data.message || `Request failed with status ${res.status}`);
+    const errorMsg = Array.isArray(data.message)
+      ? data.message.join('. ')
+      : (data.message || `Request failed with status ${res.status}`);
+    throw new Error(errorMsg);
   }
 
   return data;
@@ -66,7 +69,10 @@ async function requestBlob(endpoint: string) {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.message || `Request failed with status ${res.status}`);
+    const errorMsg = Array.isArray(data.message)
+      ? data.message.join('. ')
+      : (data.message || `Request failed with status ${res.status}`);
+    throw new Error(errorMsg);
   }
   return res.blob();
 }
