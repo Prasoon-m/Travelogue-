@@ -69,7 +69,7 @@ model Bill {
   // Plain metadata for fast indexing & filtering
   date           String?   // Format: YYYY-MM-DD
   currency       String    @default("INR")
-  status         String    @default("PROCESSING") // PROCESSING, READY_FOR_REVIEW, VERIFIED, NEEDS_REVIEW
+  status         String    @default("PROCESSING") // PROCESSING, READY_FOR_REVIEW, VERIFIED, NEEDS_REVIEW, INVALID_DOCUMENT
 
   // Stored file info
   filePath       String

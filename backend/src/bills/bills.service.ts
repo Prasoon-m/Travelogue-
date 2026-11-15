@@ -73,7 +73,7 @@ export class BillsService {
       await this.prisma.bill.update({
         where: { id: billId },
         data: {
-          status: 'READY_FOR_REVIEW',
+          status: ocrResult.isReceipt ? 'READY_FOR_REVIEW' : 'INVALID_DOCUMENT',
           extractionMeta: JSON.stringify(ocrResult),
         },
       });
@@ -134,6 +134,10 @@ export class BillsService {
 
     if (!bill) {
       throw new NotFoundException('Bill not found');
+    }
+
+    if (bill.status === 'INVALID_DOCUMENT') {
+      throw new BadRequestException('This upload was not recognized as a bill or receipt and cannot be saved as an expense. Upload a clear bill, invoice, or receipt instead.');
     }
 
     if (dto.viewId) {
@@ -224,9 +228,9 @@ export class BillsService {
 
       return {
         id: b.id,
-        merchant: merchant || 'Unknown Merchant',
+        merchant: b.status === 'INVALID_DOCUMENT' ? 'Not a bill' : merchant || 'Unknown Merchant',
         billNo,
-        total: total || '0.00',
+        total: b.status === 'INVALID_DOCUMENT' ? '' : total || '0.00',
         tax,
         currency: b.currency,
         payment,

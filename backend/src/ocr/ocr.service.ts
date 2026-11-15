@@ -10,6 +10,8 @@ export interface ExtractedField {
 }
 
 export interface OcrResult {
+  isReceipt: boolean;
+  error?: string;
   merchant: ExtractedField;
   date: ExtractedField;
   billNo: ExtractedField;
@@ -112,7 +114,7 @@ export class OcrService implements OnModuleDestroy {
     const dateLine = lines.find((line) => /\b(?:date|dated|invoice date)\b/i.test(line) || this.parseDate(line));
     const billNumberLine = lines.find((line) => /\b(?:invoice|bill|receipt)\s*(?:no\.?|number|#|:)\b/i.test(line));
     const totalLine = [...lines].reverse().find((line) =>
-      /\b(?:grand\s+total|total\s+amount|amount\s+due|net\s+payable|total)\b/i.test(line)
+      /\b(?:grand\s+total|total\s+amount|amount\s+(?:due|paid)|balance\s+due|net\s+payable|total)\b/i.test(line)
       && !/\b(?:sub\s*total|taxable)\b/i.test(line)
       && this.parseAmount(line) !== '',
     );
@@ -121,6 +123,13 @@ export class OcrService implements OnModuleDestroy {
 
     const date = dateLine ? this.parseDate(dateLine) : '';
     const billNoMatch = billNumberLine?.match(/(?:no\.?|number|#|:)\s*([A-Z0-9][A-Z0-9./_-]{2,})/i);
+    const hasReceiptHeading = /\b(?:receipt|tax invoice|invoice|bill)\b/i.test(text);
+    const hasTransactionDetails = Boolean(
+      totalLine || billNoMatch || date || (taxLine && this.parseAmount(taxLine)) || paymentLine,
+    );
+    const isReceipt = hasReceiptHeading
+      ? hasTransactionDetails
+      : Boolean(totalLine && (date || billNoMatch || taxLine || paymentLine));
     const currency = /\b(?:INR|Rs\.?)\b|₹/i.test(text)
       ? 'INR'
       : /\bUSD\b|\$/i.test(text)
@@ -129,7 +138,24 @@ export class OcrService implements OnModuleDestroy {
           ? 'EUR'
           : '';
 
+    if (!isReceipt) {
+      return {
+        isReceipt: false,
+        error: lines.length
+          ? 'This file does not look like a bill or receipt, so no expense details were extracted. Upload a clear image or PDF of a bill, invoice, or receipt. If it is hard to read, try a sharper, well-lit scan.'
+          : 'No readable text was found. Upload a clear, well-lit image or PDF of the bill, invoice, or receipt.',
+        merchant: this.field(''),
+        date: this.field(''),
+        billNo: this.field(''),
+        total: this.field(''),
+        tax: this.field(''),
+        currency: this.field(''),
+        payment: this.field(''),
+      };
+    }
+
     return {
+      isReceipt: true,
       merchant: this.field(merchant),
       date: this.field(date),
       billNo: this.field(billNoMatch?.[1] || ''),

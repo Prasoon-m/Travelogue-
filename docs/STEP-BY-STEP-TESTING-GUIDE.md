@@ -93,6 +93,8 @@ The OTP is a fixed development code. No email or WhatsApp message is sent. Do no
 
 **OCR test expectation:** the backend runs Tesseract.js locally using a bundled English model. It recognizes image content and renders PDF pages locally (up to 10 pages) before recognition. Text patterns estimate common receipt fields; values are marked uncertain and require manual correction. Test with clear, non-sensitive receipt images and PDFs. OCR accuracy has not been benchmarked, and multilingual receipts or unusual layouts may produce missing or incorrect fields.
 
+**Non-bill test:** upload a non-receipt image (for example, a landscape photo). The app should show a clear “does not look like a bill or receipt” message with guidance to upload a sharp, well-lit bill, invoice, or receipt. It should not fill the form with unrelated text or a default category, and it must not allow the upload to be confirmed as an expense. The bill list should label the upload “Not a bill” and show no amount.
+
 ## 6. Test bill listing and organization
 
 1. Upload and confirm multiple sample bills.

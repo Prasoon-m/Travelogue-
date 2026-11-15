@@ -42,6 +42,7 @@ const normalizeBill = (bill: any) => ({
   mimeType: bill.mimeType || '',
   st: bill.status === 'VERIFIED' ? 'Verified'
     : bill.status === 'PROCESSING' ? 'Processing'
+      : bill.status === 'INVALID_DOCUMENT' ? 'Not a bill'
       : bill.status === 'READY_FOR_REVIEW' || bill.status === 'NEEDS_REVIEW' ? 'Needs review'
         : bill.status,
   img: '',
@@ -138,6 +139,7 @@ export default function Home() {
   const [curBill, setCurBill] = useState<any>(null);
   const [ocrDone, setOcrDone] = useState(false);
   const [ocrError, setOcrError] = useState('');
+  const [invalidDocument, setInvalidDocument] = useState(false);
   const [extFields, setExtFields] = useState<Record<string, { v: string; c: string; t: boolean }>>({});
   const [extCat, setExtCat] = useState('');
   const [extSub, setExtSub] = useState('');
@@ -580,6 +582,7 @@ export default function Home() {
     }
 
     setOcrError('');
+    setInvalidDocument(false);
     setCurBill(null);
     setExtFields({});
     show('ext');
@@ -619,7 +622,8 @@ export default function Home() {
       }
 
       const source = result.extraction;
-      const values = normalizeExtraction(source);
+      const isInvalidDocument = source?.isReceipt === false;
+      const values = normalizeExtraction(isInvalidDocument ? null : source);
       const extractionFields: Record<string, { v: string; c: string; t: boolean }> = {};
       FIELDS.forEach(([key]) => {
         const field = values[key];
@@ -629,13 +633,14 @@ export default function Home() {
           t: false,
         };
       });
-      const detectedCategory = source?.suggestedCategory || result.category || selection.category || Object.keys(cats)[0] || '';
+      const detectedCategory = source?.suggestedCategory || selection.category || result.category || '';
       setExtFields(extractionFields);
+      setInvalidDocument(isInvalidDocument);
       setExtCat(detectedCategory);
       setExtSub(source?.suggestedSubcategory || result.subcategory || selection.subcategory || cats[detectedCategory]?.[0] || '');
       setExtCont(selection.view || result.currentView?.name || conts[0] || '');
       setExtPers(selection.isPersonal ?? result.isPersonal ?? false);
-      setExtCatConf(source?.categoryConfidence || (detectedCategory ? 'found' : 'uncertain'));
+      setExtCatConf(source?.categoryConfidence || (source?.suggestedCategory ? 'found' : detectedCategory ? 'selected' : 'missing'));
       setOcrError(source?.error || '');
       setOcrDone(true);
       await refreshBills();
@@ -661,6 +666,10 @@ export default function Home() {
   };
 
   const confirmExt = async () => {
+    if (invalidDocument) {
+      setOcrError('This upload was not recognized as a bill or receipt and cannot be saved as an expense. Upload a clear bill, invoice, or receipt instead.');
+      return;
+    }
     if (!curBill?.id) {
       setOcrError('Upload the bill before saving its details.');
       return;
@@ -1345,6 +1354,22 @@ export default function Home() {
                     <p className="mut">Recognizing text locally. The first document may take longer while the OCR engine starts.</p>
                     <div className="spin" />
                   </>
+                ) : invalidDocument ? (
+                  <>
+                    {capturedFile?.type === 'application/pdf'
+                      ? <iframe className="pdf-preview" src={capturedImg} title="Uploaded document preview" />
+                      : <img className="prev" style={{ maxWidth: 200 }} src={capturedImg} alt="Uploaded document" />}
+                    <div style={{ flex: '1 1 280px' }}>
+                      <div className="msg err" role="alert">{ocrError}</div>
+                      <div className="msg info">
+                        Check that you selected the right file and that the bill text is sharp, well-lit, and readable. Non-English or unusual receipts may not be recognized by this English OCR.
+                      </div>
+                      <div className="acts">
+                        <button className="btn p" onClick={() => show('prev')}>Choose another file</button>
+                        <button className="btn" onClick={() => show('bills')}>Close</button>
+                      </div>
+                    </div>
+                  </>
                 ) : (
                   <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
                     {capturedFile?.type === 'application/pdf'
@@ -1374,14 +1399,19 @@ export default function Home() {
                       {/* Category (editable) */}
                       <div className="fld">
                         <label htmlFor="x_cat">Category</label>
-                        <span className={`pill ${extCatConf === 'uncertain' ? 'warn' : extCatConf === 'edited' ? 'acc' : 'ok'}`}>
-                          {extCatConf === 'uncertain' ? 'Suggested: please confirm' : extCatConf === 'edited' ? 'Edited by you' : 'Auto-detected'}
+                        <span className={`pill ${extCatConf === 'uncertain' ? 'warn' : extCatConf === 'edited' ? 'acc' : extCatConf === 'missing' ? 'err' : 'ok'}`}>
+                          {extCatConf === 'uncertain' ? 'Suggested: please confirm'
+                            : extCatConf === 'edited' ? 'Edited by you'
+                              : extCatConf === 'found' ? 'Auto-detected'
+                                : extCatConf === 'selected' ? 'Selected before upload'
+                                  : 'Choose a category'}
                         </span>
                         <select id="x_cat" style={{ gridColumn: '1/-1' }} value={extCat} onChange={e => {
                           setExtCat(e.target.value);
                           setExtSub(cats[e.target.value]?.[0] || '');
                           setExtCatConf('edited');
                         }}>
+                          <option value="">Choose a category</option>
                           {Object.keys(cats).map(k => <option key={k}>{k}</option>)}
                         </select>
                       </div>

@@ -82,14 +82,14 @@ There is no hosted OCR API. The backend uses Tesseract.js 7 with a bundled Engli
 **Q7. Does OCR read the uploaded image or PDF?**
 Yes. The backend recognizes image content directly and renders PDFs locally before recognition, up to 10 pages. No receipt is sent to a cloud OCR service. Password-protected or unsupported documents can fail and require manual entry.
 
-**Q8. How does OCR field extraction work?**
-Tesseract produces recognized text. Local rules search that text for date, invoice/bill number, totals, tax, currency, and payment terms, and use an initial non-header line as a merchant candidate. Those rules are not a trained receipt model; every detected value is marked uncertain for review.
+**Q8. How does OCR field extraction work, and what happens to a non-bill image?**
+Tesseract produces recognized text. Local rules search that text for date, invoice/bill number, totals, tax, currency, and payment terms, and use an initial non-header line as a merchant candidate. A conservative check also looks for receipt/invoice wording plus transaction details (or a total plus other transaction details). When those signals are missing, the app shows a message asking the user to upload a clear bill, invoice, or receipt, extracts no expense fields, labels the upload **Not a bill**, and blocks confirming it as an expense. This is a heuristic, not a trained receipt classifier; unusual layouts or non-English bills can be rejected, so retry with a clear, well-lit scan.
 
 **Q9. How accurate is the OCR?**
 No accuracy claim can be made because it has not been benchmarked on a representative dataset. OCR output depends on image quality, layout, fonts, language, and the rule-based parser. Measure field-level precision/recall on consented, representative receipts before relying on it for automated accounting.
 
 **Q10. Why choose open-source local OCR instead of a cloud API?**
-It avoids per-page vendor charges and does not transmit bill images to an OCR provider, which is useful for local development and data control. The trade-offs are that the team operates the OCR runtime and language models, field extraction is less robust than a purpose-built receipt model, and processing capacity must be managed.
+Tesseract.js was chosen as a practical local MVP baseline: it runs in the Node.js backend with a bundled English model, needs no OCR vendor credentials, avoids per-page cloud charges, and does not transmit bill images to a hosted OCR API. This is a privacy/deployment choice, not a result of a comparative accuracy benchmark. Google Cloud Vision, AWS Textract, or Azure AI Document Intelligence are managed alternatives that may offer document-specific features, but require accounts/network access and sending documents to the selected provider under its terms and pricing. Self-hosted engines are also possible but add runtime/model operations. Benchmark accuracy, language support, cost, privacy, and operations with consented sample bills before replacing the current baseline.
 
 ### Technical and data questions
 
