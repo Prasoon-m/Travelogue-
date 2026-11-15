@@ -203,7 +203,7 @@ export default function Home() {
   };
 
   const loadWorkspace = async () => {
-    const [viewData, categoryData, billData, outgoing, incoming] = await Promise.all([
+    const [viewsResult, categoriesResult, billsResult, outgoingResult, incomingResult] = await Promise.allSettled([
       api.getViews(),
       api.getCategories(),
       api.getBills(),
@@ -211,36 +211,65 @@ export default function Home() {
       api.getIncomingShares(),
     ]);
 
-    setViews(viewData);
-    setConts(viewData.map((view: any) => view.name));
-    setCats(Object.fromEntries(categoryData.map((category: any) => [category.name, category.subcategories])));
-    setBills(billData.map(normalizeBill));
+    const failedRequests: string[] = [];
+    const viewData = viewsResult.status === 'fulfilled' ? viewsResult.value : [];
 
-    const outgoingShares: Record<string, { id?: string; to: string; end: string }[]> = {};
-    outgoing.forEach((share: any) => {
-      const targetName = share.targetType === 'bill'
-        ? share.targetId
-        : viewData.find((view: any) => view.id === share.targetId)?.name;
-      if (!targetName) return;
-      const key = `${share.targetType === 'bill' ? 'b' : 'v'}:${targetName}`;
-      const end = share.expiresAt
-        ? (() => {
-            const days = Math.ceil((new Date(share.expiresAt).getTime() - Date.now()) / 864e5);
-            return days <= 0 ? 'Expired' : `In ${days} days`;
-          })()
-        : 'Never';
-      outgoingShares[key] = [...(outgoingShares[key] || []), {
-        id: share.id,
-        to: share.recipientContact,
-        end,
-      }];
-    });
-    setShares(outgoingShares);
+    if (viewsResult.status === 'fulfilled') {
+      setViews(viewData);
+      setConts(viewData.map((view: any) => view.name));
+    } else {
+      failedRequests.push('views');
+    }
 
-    setIncomingShared(incoming.map((group: any) => ({
-      ...group,
-      bills: group.bills.map(normalizeBill),
-    })));
+    if (categoriesResult.status === 'fulfilled') {
+      setCats(Object.fromEntries(categoriesResult.value.map((category: any) => [category.name, category.subcategories])));
+    } else {
+      failedRequests.push('categories');
+    }
+
+    if (billsResult.status === 'fulfilled') {
+      setBills(billsResult.value.map(normalizeBill));
+    } else {
+      failedRequests.push('bills');
+    }
+
+    if (outgoingResult.status === 'fulfilled') {
+      const outgoingShares: Record<string, { id?: string; to: string; end: string }[]> = {};
+      outgoingResult.value.forEach((share: any) => {
+        const targetName = share.targetType === 'bill'
+          ? share.targetId
+          : viewData.find((view: any) => view.id === share.targetId)?.name;
+        if (!targetName) return;
+        const key = `${share.targetType === 'bill' ? 'b' : 'v'}:${targetName}`;
+        const end = share.expiresAt
+          ? (() => {
+              const days = Math.ceil((new Date(share.expiresAt).getTime() - Date.now()) / 864e5);
+              return days <= 0 ? 'Expired' : `In ${days} days`;
+            })()
+          : 'Never';
+        outgoingShares[key] = [...(outgoingShares[key] || []), {
+          id: share.id,
+          to: share.recipientContact,
+          end,
+        }];
+      });
+      setShares(outgoingShares);
+    } else {
+      failedRequests.push('outgoing shares');
+    }
+
+    if (incomingResult.status === 'fulfilled') {
+      setIncomingShared(incomingResult.value.map((group: any) => ({
+        ...group,
+        bills: group.bills.map(normalizeBill),
+      })));
+    } else {
+      failedRequests.push('incoming shares');
+    }
+
+    if (failedRequests.length) {
+      throw new Error(`Signed in, but could not load: ${failedRequests.join(', ')}. Check the API logs and retry.`);
+    }
   };
 
   const refreshBills = async () => {
@@ -311,8 +340,12 @@ export default function Home() {
       .then(async (profile) => {
         if (!active) return;
         applyProfile(profile);
-        await loadWorkspace();
-        if (active) setScreen('dash');
+        setScreen('dash');
+        try {
+          await loadWorkspace();
+        } catch (error) {
+          if (active) toast(error instanceof Error ? error.message : 'Some workspace data could not be loaded.');
+        }
       })
       .catch((error) => {
         if (active) {
@@ -467,12 +500,16 @@ export default function Home() {
       const result = await api.verifyOtp(sentTo, otp.trim());
       setToken(result.accessToken);
       applyProfile(result.user);
-      await loadWorkspace();
       setOtp('');
       setOtpSent(false);
       setPendingName('');
       show('dash');
       toast(isSignUp ? 'Account created' : 'Signed in');
+      try {
+        await loadWorkspace();
+      } catch (error) {
+        toast(error instanceof Error ? error.message : 'Signed in, but some workspace data could not be loaded. Check the API logs and retry.');
+      }
     } catch (error) {
       setAuthMsg(error instanceof Error ? error.message : 'Could not verify the code.');
       setAuthMsgType('err');
