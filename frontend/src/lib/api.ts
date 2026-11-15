@@ -1,4 +1,10 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:4000/api';
+// Use a relative path in the browser so Next.js proxy handles routing to the backend.
+// This prevents ERR_CONNECTION_REFUSED when the backend port differs or is not directly
+// reachable from the client's network. Falls back to absolute URL for SSR.
+const API_BASE =
+  typeof window !== 'undefined'
+    ? '/api'
+    : (process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:4000/api');
 
 export function getToken(): string | null {
   if (typeof window === 'undefined') return null;
