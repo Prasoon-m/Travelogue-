@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { CryptoService } from '../crypto/crypto.service';
@@ -16,7 +16,7 @@ export class BillsService {
   ) {}
 
   /**
-   * Upload bill image/PDF, encrypt and store, dispatch OCR extraction task.
+   * Validate bill content before storing the uploaded file or creating a record.
    */
   async uploadBill(userId: string, file: Express.Multer.File, dto: UploadBillDto) {
     if (!file) {
@@ -30,71 +30,47 @@ export class BillsService {
       }
     }
 
-    // 1. Encrypt and save file to secure storage
+    let ocrResult: OcrResult;
+    try {
+      ocrResult = await this.ocrService.processBillImage(file.buffer, file.mimetype);
+    } catch (error) {
+      if (error instanceof BadRequestException) throw error;
+      console.error('Bill validation OCR failed:', error);
+      throw new ServiceUnavailableException('Bill validation is temporarily unavailable. Please try again shortly.');
+    }
+
+    if (!ocrResult.isReceipt) {
+      throw new BadRequestException(ocrResult.error || 'No valid bill detected. Please upload a valid bill or receipt.');
+    }
+
     const stored = await this.storageService.saveEncryptedFile(file);
 
-    let bill;
     try {
-      // 2. Insert Bill in PROCESSING status
       const isPersonal = dto.isPersonal === 'true';
-      bill = await this.prisma.bill.create({
+      const bill = await this.prisma.bill.create({
         data: {
           userId,
           viewId: dto.viewId || null,
           category: dto.category || null,
           subcategory: dto.subcategory || null,
           isPersonal,
-          status: 'PROCESSING',
+          status: 'READY_FOR_REVIEW',
           filePath: stored.filePath,
           fileHash: stored.fileHash,
           mimeType: file.mimetype,
-          currency: 'INR',
-        },
-      });
-    } catch (error) {
-      await this.storageService.removeFile(stored.filePath);
-      throw error;
-    }
-
-    // 3. Trigger asynchronous OCR in background
-    this.processOcrInBackground(bill.id, file.buffer, file.mimetype);
-
-    return {
-      billId: bill.id,
-      status: 'PROCESSING',
-      message: 'Bill uploaded successfully. OCR extraction in progress.',
-    };
-  }
-
-  private async processOcrInBackground(billId: string, buffer: Buffer, mimeType: string) {
-    try {
-      const ocrResult: OcrResult = await this.ocrService.processBillImage(buffer, mimeType);
-
-      await this.prisma.bill.update({
-        where: { id: billId },
-        data: {
-          status: ocrResult.isReceipt ? 'READY_FOR_REVIEW' : 'INVALID_DOCUMENT',
+          currency: ocrResult.currency.value || 'INR',
           extractionMeta: JSON.stringify(ocrResult),
         },
       });
-    } catch (err) {
-      console.error(`OCR processing failed for bill ${billId}:`, err);
-      await this.prisma.bill.update({
-        where: { id: billId },
-        data: {
-          status: 'NEEDS_REVIEW',
-          extractionMeta: JSON.stringify({
-            merchant: { value: '', confidence: 'missing' },
-            date: { value: '', confidence: 'missing' },
-            billNo: { value: '', confidence: 'missing' },
-            total: { value: '', confidence: 'missing' },
-            tax: { value: '', confidence: 'missing' },
-            currency: { value: '', confidence: 'missing' },
-            payment: { value: '', confidence: 'missing' },
-            error: 'Local text extraction could not process this document. Enter the bill details manually.',
-          }),
-        },
-      });
+
+      return {
+        billId: bill.id,
+        status: bill.status,
+        message: 'Bill uploaded successfully. Review the extracted details.',
+      };
+    } catch (error) {
+      await this.storageService.removeFile(stored.filePath);
+      throw error;
     }
   }
 
@@ -153,6 +129,7 @@ export class BillsService {
     const encryptedTotal = this.cryptoService.encryptField(dto.total);
     const encryptedTax = this.cryptoService.encryptField(dto.tax || '');
     const encryptedPayment = this.cryptoService.encryptField(dto.payment || '');
+    const encryptedItems = this.cryptoService.encryptField(dto.items || '');
 
     // Determine status: VERIFIED or NEEDS_REVIEW
     const isComplete = dto.merchant && dto.total && dto.date;
@@ -166,6 +143,7 @@ export class BillsService {
         encryptedTotal,
         encryptedTax,
         encryptedPayment,
+        encryptedItems,
         date: dto.date || new Date().toISOString().slice(0, 10),
         currency: dto.currency || 'INR',
         viewId: dto.viewId || bill.viewId,
@@ -225,6 +203,7 @@ export class BillsService {
       const total = this.cryptoService.decryptField(b.encryptedTotal);
       const tax = this.cryptoService.decryptField(b.encryptedTax);
       const payment = this.cryptoService.decryptField(b.encryptedPayment);
+      const items = this.cryptoService.decryptField(b.encryptedItems);
 
       return {
         id: b.id,
@@ -234,6 +213,7 @@ export class BillsService {
         tax,
         currency: b.currency,
         payment,
+        items,
         date: b.date,
         status: b.status,
         category: b.category,
