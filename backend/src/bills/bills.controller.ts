@@ -29,7 +29,15 @@ export class BillsController {
     limits: { fileSize: 10 * 1024 * 1024 },
     fileFilter: (_req, file, callback) => {
       if (!file.mimetype.startsWith('image/') && file.mimetype !== 'application/pdf') {
-        callback(new BadRequestException('Only image or PDF files are supported.'), false);
+        callback(
+          new BadRequestException({
+            statusCode: 400,
+            error: 'INVALID_FILE_TYPE',
+            code: 'INVALID_FILE_TYPE',
+            message: 'Only image or PDF files are supported.',
+          }),
+          false,
+        );
         return;
       }
       callback(null, true);

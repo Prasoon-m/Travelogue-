@@ -1,8 +1,27 @@
-import { BadRequestException, Injectable, OnModuleDestroy } from '@nestjs/common';
+import { BadRequestException, Injectable, OnModuleDestroy, Optional } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { createCanvas, loadImage } from '@napi-rs/canvas';
 import * as path from 'path';
 import Tesseract = require('tesseract.js');
 import type { PDFDocumentProxy } from 'pdfjs-dist';
+
+export type OcrErrorCode =
+  | 'INVALID_FILE_TYPE'
+  | 'IMAGE_QUALITY_LOW'
+  | 'NOT_A_BILL'
+  | 'OCR_LOW_CONFIDENCE'
+  | 'NO_TEXT_DETECTED';
+
+export interface OcrConfig {
+  minConfidence: number;
+  minTextLength: number;
+  blurThreshold: number;
+  minBrightness: number;
+  maxBrightness: number;
+  minContrastStdDev: number;
+  maxFileSize: number;
+  allowedMimeTypes: string[];
+}
 
 export interface ExtractedField {
   value: string;
@@ -11,8 +30,10 @@ export interface ExtractedField {
 
 export interface OcrResult {
   isReceipt: boolean;
+  errorCode?: OcrErrorCode;
+  statusCode?: 400 | 422;
   error?: string;
-  quality: 'readable' | 'blurry' | 'unreadable' | 'incomplete';
+  quality: 'readable' | 'blurry' | 'unreadable' | 'incomplete' | 'blank' | 'dark' | 'corrupt';
   merchant: ExtractedField;
   date: ExtractedField;
   billNo: ExtractedField;
@@ -30,21 +51,236 @@ export class OcrService implements OnModuleDestroy {
   private readonly maxPdfPages = 10;
   private workerPromise: Promise<Tesseract.Worker> | null = null;
   private queue: Promise<void> = Promise.resolve();
+  public readonly config: OcrConfig;
 
-  async processBillImage(buffer: Buffer, mimeType: string): Promise<OcrResult> {
-    let pages: Buffer[];
-    try {
-      if (mimeType === 'application/pdf') {
-        pages = await this.renderPdfPages(buffer);
-      } else {
-        await loadImage(buffer);
-        pages = [buffer];
-      }
-    } catch (error) {
-      console.error('Uploaded bill could not be decoded:', error);
-      throw new BadRequestException('No valid bill detected. Please upload a valid bill or receipt.');
+  constructor(
+    @Optional() private readonly configService?: ConfigService,
+    configOverrides?: Partial<OcrConfig>,
+  ) {
+    this.config = {
+      minConfidence: this.getNumberConfig('OCR_MIN_CONFIDENCE', 35),
+      minTextLength: this.getNumberConfig('OCR_MIN_TEXT_LENGTH', 15),
+      blurThreshold: this.getNumberConfig('OCR_BLUR_THRESHOLD', 40),
+      minBrightness: this.getNumberConfig('OCR_MIN_BRIGHTNESS', 25),
+      maxBrightness: this.getNumberConfig('OCR_MAX_BRIGHTNESS', 252),
+      minContrastStdDev: this.getNumberConfig('OCR_MIN_CONTRAST_STDDEV', 8),
+      maxFileSize: this.getNumberConfig('OCR_MAX_FILE_SIZE', 10 * 1024 * 1024),
+      allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp', 'image/jpg', 'application/pdf'],
+      ...configOverrides,
+    };
+  }
+
+  private getNumberConfig(key: string, defaultValue: number): number {
+    const val = this.configService?.get<string | number>(key) ?? process.env[key];
+    if (val !== undefined && val !== null && val !== '') {
+      const num = Number(val);
+      if (!Number.isNaN(num)) return num;
+    }
+    return defaultValue;
+  }
+
+  /**
+   * Validates file signature / magic bytes against declared MIME type.
+   */
+  verifyFileType(buffer: Buffer, mimeType: string): { valid: boolean; detectedMime?: string } {
+    if (!buffer || buffer.length < 4) {
+      return { valid: false };
     }
 
+    const normMime = (mimeType || '').toLowerCase();
+
+    // PDF magic bytes: %PDF- (0x25 0x50 0x44 0x46)
+    if (buffer[0] === 0x25 && buffer[1] === 0x50 && buffer[2] === 0x44 && buffer[3] === 0x46) {
+      return { valid: normMime === 'application/pdf', detectedMime: 'application/pdf' };
+    }
+
+    // JPEG magic bytes: 0xFF 0xD8 0xFF
+    if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+      return { valid: normMime === 'image/jpeg' || normMime === 'image/jpg', detectedMime: 'image/jpeg' };
+    }
+
+    // PNG magic bytes: 0x89 0x50 0x4E 0x47
+    if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) {
+      return { valid: normMime === 'image/png', detectedMime: 'image/png' };
+    }
+
+    // WebP magic bytes: RIFF....WEBP
+    if (
+      buffer.length >= 12 &&
+      buffer[0] === 0x52 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x46 &&
+      buffer[8] === 0x57 && buffer[9] === 0x45 && buffer[10] === 0x42 && buffer[11] === 0x50
+    ) {
+      return { valid: normMime === 'image/webp', detectedMime: 'image/webp' };
+    }
+
+    return { valid: false };
+  }
+
+  /**
+   * Pre-OCR check: inspects image quality (decode, blank, too dark, blur, document-like contrast).
+   */
+  async validateImageQuality(imageBuffer: Buffer): Promise<{
+    valid: boolean;
+    quality: OcrResult['quality'];
+    error?: string;
+    errorCode?: OcrErrorCode;
+  }> {
+    let img: any;
+    try {
+      img = await loadImage(imageBuffer);
+    } catch {
+      return {
+        valid: false,
+        quality: 'corrupt',
+        error: 'The image file is corrupt or could not be decoded. Please upload a valid image.',
+        errorCode: 'IMAGE_QUALITY_LOW',
+      };
+    }
+
+    if (!img || !img.width || !img.height || img.width <= 0 || img.height <= 0) {
+      return {
+        valid: false,
+        quality: 'corrupt',
+        error: 'The image has invalid dimensions. Please upload a valid bill.',
+        errorCode: 'IMAGE_QUALITY_LOW',
+      };
+    }
+
+    // Standardize to max 300x300 for fast, consistent analysis
+    const maxDim = 300;
+    const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+    const w = Math.max(10, Math.round(img.width * scale));
+    const h = Math.max(10, Math.round(img.height * scale));
+
+    const canvas = createCanvas(w, h);
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, w, h);
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const data = imgData.data;
+
+    let sum = 0;
+    let sumSq = 0;
+    const gray = new Float32Array(w * h);
+
+    for (let i = 0; i < data.length; i += 4) {
+      const y = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+      gray[i / 4] = y;
+      sum += y;
+      sumSq += y * y;
+    }
+
+    const n = w * h;
+    const mean = sum / n;
+    const variance = (sumSq / n) - (mean * mean);
+    const stdDev = Math.sqrt(Math.max(0, variance));
+
+    // 1. Check too dark
+    if (mean < this.config.minBrightness) {
+      return {
+        valid: false,
+        quality: 'dark',
+        error: 'The uploaded image is too dark to read. Please upload a well-lit bill.',
+        errorCode: 'IMAGE_QUALITY_LOW',
+      };
+    }
+
+    // 2. Check blank / solid color
+    if (stdDev < this.config.minContrastStdDev) {
+      return {
+        valid: false,
+        quality: 'blank',
+        error: 'The uploaded image appears to be blank. Please upload a clear bill or receipt.',
+        errorCode: 'IMAGE_QUALITY_LOW',
+      };
+    }
+    if (mean > this.config.maxBrightness && stdDev < this.config.minContrastStdDev * 1.5) {
+      return {
+        valid: false,
+        quality: 'blank',
+        error: 'The uploaded image appears to be blank. Please upload a clear bill or receipt.',
+        errorCode: 'IMAGE_QUALITY_LOW',
+      };
+    }
+
+    // 3. Check blur (Laplacian variance on grayscale)
+    let lapSum = 0;
+    let lapSumSq = 0;
+    let lapCount = 0;
+
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const idx = y * w + x;
+        const val = 4 * gray[idx] - gray[idx - 1] - gray[idx + 1] - gray[idx - w] - gray[idx + w];
+        lapSum += val;
+        lapSumSq += val * val;
+        lapCount++;
+      }
+    }
+
+    const lapMean = lapSum / lapCount;
+    const lapVar = (lapSumSq / lapCount) - (lapMean * lapMean);
+
+    if (lapVar < this.config.blurThreshold) {
+      return {
+        valid: false,
+        quality: 'blurry',
+        error: 'This bill is too blurry to read. Please upload a clearer image.',
+        errorCode: 'IMAGE_QUALITY_LOW',
+      };
+    }
+
+    return { valid: true, quality: 'readable' };
+  }
+
+  async processBillImage(buffer: Buffer, mimeType: string): Promise<OcrResult> {
+    // 1. Pre-OCR Check: File size
+    if (!buffer || buffer.length === 0 || buffer.length > this.config.maxFileSize) {
+      return this.createFailureResult(
+        'INVALID_FILE_TYPE',
+        'File size must be greater than 0 and less than 10MB.',
+        400,
+        'unreadable',
+      );
+    }
+
+    // 2. Pre-OCR Check: File format / signature
+    const typeCheck = this.verifyFileType(buffer, mimeType);
+    if (!typeCheck.valid) {
+      return this.createFailureResult(
+        'INVALID_FILE_TYPE',
+        'Invalid file type. Only JPEG, PNG, WebP image and PDF files are supported.',
+        400,
+        'unreadable',
+      );
+    }
+
+    let pages: Buffer[];
+    if (mimeType === 'application/pdf') {
+      try {
+        pages = await this.renderPdfPages(buffer);
+      } catch (error) {
+        return this.createFailureResult(
+          'IMAGE_QUALITY_LOW',
+          'PDF could not be decoded. Please upload a valid PDF file.',
+          400,
+          'corrupt',
+        );
+      }
+    } else {
+      // 3. Pre-OCR Check: Image Quality (decode, blank, dark, blur)
+      const qualityCheck = await this.validateImageQuality(buffer);
+      if (!qualityCheck.valid) {
+        return this.createFailureResult(
+          qualityCheck.errorCode || 'IMAGE_QUALITY_LOW',
+          qualityCheck.error || 'Image quality is too low. Please upload a clear bill.',
+          400,
+          qualityCheck.quality || 'unreadable',
+        );
+      }
+      pages = [buffer];
+    }
+
+    // 4. Run OCR
     const recognition = this.queue.then(async () => {
       const worker = await this.getWorker();
       const texts: string[] = [];
@@ -127,6 +363,39 @@ export class OcrService implements OnModuleDestroy {
   }
 
   validateRecognizedText(text: string, recognitionConfidence: number): OcrResult {
+    const rawTrimmed = (text || '').trim();
+
+    // 1. Post-OCR Check: Empty text
+    if (!rawTrimmed || rawTrimmed.length === 0) {
+      return this.createFailureResult(
+        'NO_TEXT_DETECTED',
+        'No text detected in the uploaded image. Please ensure the bill is clear and legible.',
+        422,
+        'unreadable',
+      );
+    }
+
+    // 2. Post-OCR Check: Text too short
+    if (rawTrimmed.length < this.config.minTextLength) {
+      return this.createFailureResult(
+        'NO_TEXT_DETECTED',
+        'Text detected is too short to be a valid bill. Please upload a full bill or receipt.',
+        422,
+        'incomplete',
+      );
+    }
+
+    // 3. Post-OCR Check: Confidence threshold
+    if (recognitionConfidence < this.config.minConfidence) {
+      return this.createFailureResult(
+        'OCR_LOW_CONFIDENCE',
+        'This bill is too blurry to read. Please upload a clearer image.',
+        422,
+        'blurry',
+      );
+    }
+
+    // 4. Post-OCR Check: Bill structure & fields parsing
     const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
     const readableLines = lines.filter((line) => !/^(tax invoice|invoice|receipt|bill|thank you)\b/i.test(line));
     const merchant = readableLines.find((line) => !this.isTransactionLine(line)) || '';
@@ -148,10 +417,11 @@ export class OcrService implements OnModuleDestroy {
     const hasAmount = Boolean(totalLine);
     const itemLines = this.extractItems(lines);
     const hasReceiptDetails = Boolean(date || billNoMatch || taxLine || paymentLine || itemLines.length >= 2);
-    const isReadable = lines.length > 0 && recognitionConfidence >= 20;
-    const isReceipt = isReadable && Boolean(
+
+    const isReceipt = Boolean(
       merchant && hasAmount && hasReceiptDetails && (hasReceiptHeading || date || billNoMatch || taxLine || paymentLine),
     );
+
     const currency = /\b(?:INR|Rs\.?)\b|₹/i.test(text)
       ? 'INR'
       : /\bUSD\b|\$/i.test(text)
@@ -161,26 +431,15 @@ export class OcrService implements OnModuleDestroy {
           : '';
 
     if (!isReceipt) {
-      const quality = !lines.length ? 'unreadable'
-        : recognitionConfidence < 20 ? 'blurry'
-          : hasReceiptHeading || hasReceiptDetails ? 'incomplete' : 'readable';
-      return {
-        isReceipt: false,
+      const quality = hasReceiptHeading || hasReceiptDetails ? 'incomplete' : 'readable';
+      return this.createFailureResult(
+        'NOT_A_BILL',
+        quality === 'incomplete'
+          ? 'This bill looks incomplete or unreadable. Please upload a clear, full image of the bill or receipt.'
+          : 'No valid bill detected. Please upload a valid bill or receipt.',
+        422,
         quality,
-        error: quality === 'blurry'
-          ? 'This bill is too blurry to read. Please upload a clearer image.'
-          : quality === 'incomplete'
-            ? 'This bill looks incomplete or unreadable. Please upload a clear, full image of the bill or receipt.'
-            : 'No valid bill detected. Please upload a valid bill or receipt.',
-        merchant: this.field(''),
-        date: this.field(''),
-        billNo: this.field(''),
-        items: this.field(''),
-        total: this.field(''),
-        tax: this.field(''),
-        currency: this.field(''),
-        payment: this.field(''),
-      };
+      );
     }
 
     return {
@@ -194,6 +453,29 @@ export class OcrService implements OnModuleDestroy {
       tax: this.field(taxLine ? this.parseAmount(taxLine) : ''),
       currency: this.field(currency),
       payment: this.field(paymentLine || ''),
+    };
+  }
+
+  createFailureResult(
+    errorCode: OcrErrorCode,
+    errorMessage: string,
+    statusCode: 400 | 422,
+    quality: OcrResult['quality'] = 'unreadable',
+  ): OcrResult {
+    return {
+      isReceipt: false,
+      errorCode,
+      statusCode,
+      error: errorMessage,
+      quality,
+      merchant: this.field(''),
+      date: this.field(''),
+      billNo: this.field(''),
+      items: this.field(''),
+      total: this.field(''),
+      tax: this.field(''),
+      currency: this.field(''),
+      payment: this.field(''),
     };
   }
 

@@ -11,3 +11,10 @@ coverage
 *.tsbuildinfo
 backend/prisma/*.db
 backend/uploads/
+.venv/
+.venv*/
+venv/
+venv*/
+__pycache__/
+*.pyc
+

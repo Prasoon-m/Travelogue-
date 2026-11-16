@@ -1,4 +1,10 @@
-import { Injectable, NotFoundException, BadRequestException, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  UnprocessableEntityException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { CryptoService } from '../crypto/crypto.service';
@@ -19,8 +25,13 @@ export class BillsService {
    * Validate bill content before storing the uploaded file or creating a record.
    */
   async uploadBill(userId: string, file: Express.Multer.File, dto: UploadBillDto) {
-    if (!file) {
-      throw new BadRequestException('Please provide a bill image or PDF (max 10MB).');
+    if (!file || !file.buffer || file.buffer.length === 0) {
+      throw new BadRequestException({
+        statusCode: 400,
+        error: 'INVALID_FILE_TYPE',
+        code: 'INVALID_FILE_TYPE',
+        message: 'Please provide a bill image or PDF (max 10MB).',
+      });
     }
 
     if (dto.viewId) {
@@ -34,13 +45,30 @@ export class BillsService {
     try {
       ocrResult = await this.ocrService.processBillImage(file.buffer, file.mimetype);
     } catch (error) {
-      if (error instanceof BadRequestException) throw error;
+      if (error instanceof BadRequestException || error instanceof UnprocessableEntityException) throw error;
       console.error('Bill validation OCR failed:', error);
       throw new ServiceUnavailableException('Bill validation is temporarily unavailable. Please try again shortly.');
     }
 
     if (!ocrResult.isReceipt) {
-      throw new BadRequestException(ocrResult.error || 'No valid bill detected. Please upload a valid bill or receipt.');
+      const statusCode = ocrResult.statusCode || (
+        ocrResult.errorCode === 'INVALID_FILE_TYPE' || ocrResult.errorCode === 'IMAGE_QUALITY_LOW' ? 400 : 422
+      );
+      const errorCode = ocrResult.errorCode || 'NOT_A_BILL';
+      const errorMessage = ocrResult.error || 'No valid bill detected. Please upload a valid bill or receipt.';
+
+      const payload = {
+        statusCode,
+        error: errorCode,
+        code: errorCode,
+        message: errorMessage,
+      };
+
+      if (statusCode === 400) {
+        throw new BadRequestException(payload);
+      } else {
+        throw new UnprocessableEntityException(payload);
+      }
     }
 
     const stored = await this.storageService.saveEncryptedFile(file);
