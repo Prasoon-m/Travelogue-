@@ -55,7 +55,7 @@ export class OcrService implements OnModuleDestroy {
 
   constructor(
     @Optional() private readonly configService?: ConfigService,
-    configOverrides?: Partial<OcrConfig>,
+    @Optional() configOverrides?: Partial<OcrConfig>,
   ) {
     this.config = {
       minConfidence: this.getNumberConfig('OCR_MIN_CONFIDENCE', 35),
