@@ -42,6 +42,9 @@ export interface OcrResult {
   tax: ExtractedField;
   currency: ExtractedField;
   payment: ExtractedField;
+  suggestedCategory?: string;
+  suggestedSubcategory?: string;
+  categoryConfidence?: 'found' | 'uncertain' | 'missing';
 }
 
 type PdfJs = typeof import('pdfjs-dist');
@@ -436,6 +439,12 @@ export class OcrService implements OnModuleDestroy {
       );
     }
 
+    const { category: suggestedCategory, subcategory: suggestedSubcategory } = this.categorizeBill(
+      text,
+      merchant,
+      itemLines.join('\n'),
+    );
+
     return {
       isReceipt: true,
       quality: 'readable',
@@ -447,7 +456,48 @@ export class OcrService implements OnModuleDestroy {
       tax: this.field(tax),
       currency: this.field(currency),
       payment: this.field(paymentLine || ''),
+      suggestedCategory,
+      suggestedSubcategory,
+      categoryConfidence: 'found',
     };
+  }
+
+  categorizeBill(text: string, merchant: string, items: string): { category: string; subcategory: string } {
+    const combined = `${merchant} ${items} ${text}`.toLowerCase();
+
+    // 1. Fuel
+    if (/\b(?:petrol|diesel|fuel|cng|shell|hpcl|bpcl|iocl|service\s*station|petroleum|dispenser|nozzle)\b/i.test(combined)) {
+      const sub = /\bdiesel\b/i.test(combined) ? 'Diesel' : 'Petrol';
+      return { category: 'Fuel', subcategory: sub };
+    }
+
+    // 2. Travel
+    if (/\b(?:uber|ola|cab|taxi|ride|transit|metro|airline|flight|indigo|air\s*india|spicejet|vistara|airport|train|railway|irctc|toll|fastag|bus|transport)\b/i.test(combined)) {
+      let sub = 'Taxi and Cab';
+      if (/\b(?:flight|airline|indigo|air\s*india|spicejet|vistara|airport)\b/i.test(combined)) sub = 'Flights';
+      else if (/\b(?:train|railway|irctc|metro)\b/i.test(combined)) sub = 'Train';
+      return { category: 'Travel', subcategory: sub };
+    }
+
+    // 3. Accommodation
+    if (/\b(?:hotel|resort|inn|suites|stay|lodge|motel|airbnb|marriott|hyatt|hilton|hostel|check-in|checkout|guest\s*house)\b/i.test(combined)) {
+      const sub = /\bserviced\s*apartment\b/i.test(combined) ? 'Serviced Apartment' : 'Hotel';
+      return { category: 'Accommodation', subcategory: sub };
+    }
+
+    // 4. Meals / Dining
+    if (/\b(?:cafe|coffee|restaurant|kitchen|bistro|bar|food|dining|dine|pizza|burger|tea|chai|bakery|starbucks|mcdonald|subway|swiggy|zomato|breakfast|lunch|dinner|meal|sandwich|beverage|beer|wine|pub|sweet|roaster)\b/i.test(combined)) {
+      return { category: 'Meals', subcategory: 'Team Meals' };
+    }
+
+    // 5. Office
+    if (/\b(?:stationery|paper|print|xerox|software|google|microsoft|adobe|aws|subscription|supplies|staples|pen|notebook|courier|postage)\b/i.test(combined)) {
+      const sub = /\b(?:software|google|microsoft|adobe|aws|subscription|cloud|saas)\b/i.test(combined) ? 'Software' : 'Stationery';
+      return { category: 'Office', subcategory: sub };
+    }
+
+    // Default sensible fallback for expenses
+    return { category: 'Meals', subcategory: 'Team Meals' };
   }
 
   createFailureResult(

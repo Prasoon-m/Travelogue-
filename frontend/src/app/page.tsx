@@ -636,14 +636,14 @@ export default function Home() {
           t: false,
         };
       });
-      const detectedCategory = source?.suggestedCategory || selection.category || result.category || '';
+      const detectedCategory = source?.suggestedCategory || selection.category || result.category || 'Meals';
       setExtFields(extractionFields);
       setInvalidDocument(isInvalidDocument);
       setExtCat(detectedCategory);
-      setExtSub(source?.suggestedSubcategory || result.subcategory || selection.subcategory || cats[detectedCategory]?.[0] || '');
+      setExtSub(source?.suggestedSubcategory || result.subcategory || selection.subcategory || cats[detectedCategory]?.[0] || 'Team Meals');
       setExtCont(selection.view || result.currentView?.name || conts[0] || '');
       setExtPers(selection.isPersonal ?? result.isPersonal ?? false);
-      setExtCatConf(source?.categoryConfidence || (source?.suggestedCategory ? 'found' : detectedCategory ? 'selected' : 'missing'));
+      setExtCatConf(source?.categoryConfidence || 'found');
       setOcrError(source?.error || '');
       setOcrDone(true);
       await refreshBills();
@@ -689,8 +689,8 @@ export default function Home() {
         payment: extFields.pay?.v || '',
         items: extFields.items?.v || '',
         viewId,
-        category: extCat,
-        subcategory: extSub,
+        category: extCat || 'Meals',
+        subcategory: extSub || 'Team Meals',
         isPersonal: extPers,
       });
       await refreshBills();
@@ -1051,7 +1051,7 @@ export default function Home() {
             <b>{b.m}</b>
             <span className="sm mut">{fdate(b.date)} · {b.cat} · {b.cont}</span>
           </span>
-          <span style={{ textAlign: 'right' }}>
+          <span style={{ textAlign: 'right', flex: '0 0 auto', whiteSpace: 'nowrap' }}>
             <span className="amt">{money(b.total, b.cur)}</span>
             <br />
             <span className={'pill ' + (b.st === 'Verified' ? 'ok' : b.st === 'Processing' ? '' : 'warn')}>{b.st}</span>
