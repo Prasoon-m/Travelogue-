@@ -597,25 +597,57 @@ input[type=date] {
 /* ===================== BILL ROW (item + share button) ===================== */
 .ir {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   align-items: stretch;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .ir .item {
-  flex: 1;
+  flex: 1 1 0%;
   min-width: 0;
   width: auto;
+  overflow: hidden;
+}
+
+.ir .item .g {
+  flex: 1 1 0%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.ir .item .g b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ir .item .g .sm {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+}
+
+.ir .item > span:last-child {
+  flex: 0 0 auto;
+  min-width: 0;
+  text-align: right;
+  white-space: nowrap;
 }
 
 .shr {
   flex: 0 0 auto;
-  padding: 0 18px;
+  padding: 0 14px;
   box-shadow: var(--sh);
   position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
+  white-space: nowrap;
 }
 
 .sbadge {
@@ -1553,9 +1585,16 @@ dd {
     height: 84px;
   }
 
+  .ir {
+    gap: 8px;
+  }
+
   .ir .shr {
-    padding: 0 12px;
+    padding: 0 10px;
+    font-size: 13px;
+    gap: 4px;
     min-height: 0;
+    white-space: nowrap;
   }
 
   .mock {
@@ -1808,6 +1847,11 @@ dd {
   .item img,
   .bill-file-placeholder {
     display: none;
+  }
+
+  .ir .shr {
+    padding: 0 8px;
+    font-size: 12px;
   }
 }
 

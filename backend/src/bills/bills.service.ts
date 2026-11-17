@@ -79,8 +79,8 @@ export class BillsService {
         data: {
           userId,
           viewId: dto.viewId || null,
-          category: dto.category || null,
-          subcategory: dto.subcategory || null,
+          category: dto.category || ocrResult.suggestedCategory || 'Meals',
+          subcategory: dto.subcategory || ocrResult.suggestedSubcategory || 'Team Meals',
           isPersonal,
           status: 'READY_FOR_REVIEW',
           filePath: stored.filePath,
