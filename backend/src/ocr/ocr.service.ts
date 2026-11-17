@@ -397,29 +397,21 @@ export class OcrService implements OnModuleDestroy {
 
     // 4. Post-OCR Check: Bill structure & fields parsing
     const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-    const readableLines = lines.filter((line) => !/^(tax invoice|invoice|receipt|bill|thank you)\b/i.test(line));
-    const merchant = readableLines.find((line) => !this.isTransactionLine(line)) || '';
-    const dateLine = lines.find((line) => /\b(?:date|dated|invoice date)\b/i.test(line) || this.parseDate(line));
-    const billNumberLine = lines.find((line) => /\b(?:invoice|bill|receipt)\s*(?:no\.?|number|#|:)\b/i.test(line));
-    const totalLine = [...lines].reverse().find((line) =>
-      /\b(?:grand\s+total|total\s+amount|amount\s+(?:due|paid)|balance\s+due|net\s+payable|total)\b/i.test(line)
-      && !/\b(?:sub\s*total|taxable)\b/i.test(line)
-      && this.parseAmount(line) !== '',
-    );
-    const taxLine = lines.find((line) => !/\bGSTIN\b/i.test(line)
-      && /\b(?:tax|gst|vat|cgst|sgst|igst)\b/i.test(line)
-      && this.parseAmount(line) !== '');
-    const paymentLine = lines.find((line) => /\b(?:cash|credit card|debit card|visa|mastercard|upi|payment|paid by)\b/i.test(line));
+    const merchant = this.extractMerchant(lines);
+    const dateLine = lines.find((line) => /\b(?:date|dated|invoice\s*date|bill\s*date)\b/i.test(line) || this.parseDate(line));
+    const date = dateLine ? this.parseDate(dateLine) : lines.map((l) => this.parseDate(l)).find(Boolean) || '';
+    const billNo = this.extractBillNo(lines);
+    const total = this.extractTotal(lines);
+    const tax = this.extractTax(lines);
+    const paymentLine = lines.find((line) => /\b(?:cash|credit\s*card|debit\s*card|visa|mastercard|upi|gpay|paytm|phonepe|net\s*banking|paid\s*by|payment\s*method)\b/i.test(line));
 
-    const date = dateLine ? this.parseDate(dateLine) : '';
-    const billNoMatch = billNumberLine?.match(/(?:no\.?|number|#|:)\s*([A-Z0-9][A-Z0-9./_-]{2,})/i);
-    const hasReceiptHeading = /\b(?:receipt|tax invoice|invoice|bill|GSTIN|GST\s*IN|invoice\s*no)\b/i.test(text);
-    const hasAmount = Boolean(totalLine);
+    const hasReceiptHeading = /\b(?:receipt|tax\s*invoice|retail\s*invoice|invoice|bill|gstin|gst\s*in|cash\s*memo|cash\s*bill|inv(?:oice)?\s*no)\b/i.test(text);
+    const hasAmount = Boolean(total);
     const itemLines = this.extractItems(lines);
-    const hasReceiptDetails = Boolean(date || billNoMatch || taxLine || paymentLine || itemLines.length >= 2);
+    const hasReceiptDetails = Boolean(date || billNo || tax || paymentLine || itemLines.length >= 2);
 
     const isReceipt = Boolean(
-      merchant && hasAmount && hasReceiptDetails && (hasReceiptHeading || date || billNoMatch || taxLine || paymentLine),
+      merchant && hasAmount && hasReceiptDetails && (hasReceiptHeading || date || billNo || tax || paymentLine),
     );
 
     const currency = /\b(?:INR|Rs\.?)\b|₹/i.test(text)
@@ -428,7 +420,9 @@ export class OcrService implements OnModuleDestroy {
         ? 'USD'
         : /\bEUR\b|€/i.test(text)
           ? 'EUR'
-          : '';
+          : /\bGBP\b|£/i.test(text)
+            ? 'GBP'
+            : '';
 
     if (!isReceipt) {
       const quality = hasReceiptHeading || hasReceiptDetails ? 'incomplete' : 'readable';
@@ -447,10 +441,10 @@ export class OcrService implements OnModuleDestroy {
       quality: 'readable',
       merchant: this.field(merchant),
       date: this.field(date),
-      billNo: this.field(billNoMatch?.[1] || ''),
+      billNo: this.field(billNo),
       items: this.field(itemLines.join('\n')),
-      total: this.field(totalLine ? this.parseAmount(totalLine) : ''),
-      tax: this.field(taxLine ? this.parseAmount(taxLine) : ''),
+      total: this.field(total),
+      tax: this.field(tax),
       currency: this.field(currency),
       payment: this.field(paymentLine || ''),
     };
@@ -477,6 +471,106 @@ export class OcrService implements OnModuleDestroy {
       currency: this.field(''),
       payment: this.field(''),
     };
+  }
+
+  private extractMerchant(lines: string[]): string {
+    const noisePatterns = [
+      /^(?:welcome(?:\s+to)?|thank\s+you|thanks|visit\s+again|customer\s+copy|merchant\s+copy|duplicate\s+copy|original(?:\s+copy)?)\b/i,
+      /^(?:tax\s+invoice|retail\s+invoice|invoice|bill|cash\s+memo|receipt|cash\s+bill)\b/i,
+      /\b(?:gstin|gst\s*no|pan\s*no|cin\s*no|fssai|reg(?:\s*no)?|tin\s*no)\b/i,
+      /\b(?:tel|phone|ph|mob|mobile|call|contact|fax|email|www\.|https?:\/\/)\b/i,
+      /\b(?:pincode|pin\s*code|pin\s*[-:]?\s*\d{6}|\d{6}\b)/i,
+      /^[0-9\W]+$/,
+    ];
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.length < 2) continue;
+
+      const welcomeMatch = trimmed.match(/^welcome\s+to\s+([A-Za-z0-9 &.,\x27_-]{3,})/i);
+      if (welcomeMatch && welcomeMatch[1]) {
+        return welcomeMatch[1].trim();
+      }
+
+      if (noisePatterns.some((pattern) => pattern.test(trimmed))) continue;
+      if (this.isTransactionLine(trimmed)) continue;
+
+      if (/[A-Za-z]{3,}/.test(trimmed)) {
+        return trimmed.replace(/^[*#•\s-]+|[*#•\s-]+$/g, '');
+      }
+    }
+
+    const fallback = lines.find((l) => /[A-Za-z]{2,}/.test(l.trim()) && !this.isTransactionLine(l.trim()));
+    return fallback ? fallback.trim() : '';
+  }
+
+  private extractBillNo(lines: string[]): string {
+    for (const line of lines) {
+      const match = line.match(/\b(?:invoice|inv|bill|receipt|order|token|txn|check|doc(?:ument)?)\s*(?:no\.?|num(?:ber)?|id|ref|#|:|-)*\s*[:#-\s]\s*([A-Z0-9][A-Z0-9./_-]{2,})/i);
+      if (match && match[1]) {
+        const val = match[1].trim();
+        if (!/^(?:total|amount|cash|card|due|paid|date|summary|details|tax|gst)$/i.test(val)) {
+          return val;
+        }
+      }
+    }
+    return '';
+  }
+
+  private extractTotal(lines: string[]): string {
+    const totalKeywords = /\b(?:grand\s*total|total\s*(?:amount|due|payable)?|net\s*(?:amount|payable|total)?|amount\s*(?:due|paid|payable)?|balance\s*(?:due|payable)?|final\s*amount|bill\s*total|amt\s*due)\b/i;
+
+    // 1. Search in reverse for specific total lines with amount
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i];
+      if (totalKeywords.test(line) && !/\b(?:sub\s*total|taxable)\b/i.test(line)) {
+        const amt = this.parseAmount(line);
+        if (amt) return amt;
+        if (i + 1 < lines.length) {
+          const nextAmt = this.parseAmount(lines[i + 1]);
+          if (nextAmt) return nextAmt;
+        }
+      }
+    }
+
+    // 2. Generic "TOTAL" label check
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i];
+      if (/\btotal\b/i.test(line) && !/\b(?:sub\s*total|taxable)\b/i.test(line)) {
+        const amt = this.parseAmount(line);
+        if (amt) return amt;
+        if (i + 1 < lines.length) {
+          const nextAmt = this.parseAmount(lines[i + 1]);
+          if (nextAmt) return nextAmt;
+        }
+      }
+    }
+
+    // 3. Line starting with "Amount" or "Net" or "Balance"
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i];
+      if (/^\s*(?:amount|net|balance)\s*[:—\-]?\s*/i.test(line) && !/\b(?:tax|gst|subtotal)\b/i.test(line)) {
+        const amt = this.parseAmount(line);
+        if (amt) return amt;
+      }
+    }
+
+    return '';
+  }
+
+  private extractTax(lines: string[]): string {
+    // 1. Explicit total tax line
+    const totalTaxLine = lines.find((line) => !/\bGSTIN\b/i.test(line)
+      && /\b(?:total\s+tax|tax\s+amount|gst\s+amount|vat\s+amount)\b/i.test(line)
+      && this.parseAmount(line) !== '');
+    if (totalTaxLine) return this.parseAmount(totalTaxLine);
+
+    // 2. Single tax / GST / VAT line
+    const taxLine = lines.find((line) => !/\bGSTIN\b/i.test(line)
+      && /\b(?:tax|gst|vat|cgst|sgst|igst)\b/i.test(line)
+      && !/\b(?:tax\s+invoice|taxable)\b/i.test(line)
+      && this.parseAmount(line) !== '');
+    return taxLine ? this.parseAmount(taxLine) : '';
   }
 
   private isTransactionLine(line: string): boolean {
@@ -515,15 +609,52 @@ export class OcrService implements OnModuleDestroy {
   }
 
   private parseDate(text: string): string {
+    const months: Record<string, string> = {
+      jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+      jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12',
+      january: '01', february: '02', march: '03', april: '04', june: '06',
+      july: '07', august: '08', september: '09', october: '10', november: '11', december: '12',
+    };
+
+    // 1. ISO 4-digit: YYYY-MM-DD, YYYY/MM/DD, YYYY.MM.DD
     const iso = text.match(/\b(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})\b/);
     if (iso) return `${iso[1]}-${iso[2].padStart(2, '0')}-${iso[3].padStart(2, '0')}`;
 
-    const dayFirst = text.match(/\b(\d{1,2})[-/.](\d{1,2})[-/.](20\d{2})\b/);
-    if (dayFirst) return `${dayFirst[3]}-${dayFirst[2].padStart(2, '0')}-${dayFirst[1].padStart(2, '0')}`;
+    // 2. Day-first 4-digit: DD-MM-YYYY, DD/MM/YYYY, DD.MM.YYYY
+    const dayFirst4 = text.match(/\b(\d{1,2})[-/.](\d{1,2})[-/.](20\d{2})\b/);
+    if (dayFirst4) return `${dayFirst4[3]}-${dayFirst4[2].padStart(2, '0')}-${dayFirst4[1].padStart(2, '0')}`;
 
-    const monthName = text.match(/\b(?:\d{1,2}\s+[A-Za-z]{3,9}\s+20\d{2}|[A-Za-z]{3,9}\s+\d{1,2},?\s+20\d{2})\b/);
-    if (!monthName) return '';
-    const parsed = new Date(monthName[0]);
-    return Number.isNaN(parsed.getTime()) ? '' : parsed.toISOString().slice(0, 10);
+    // 3. Day-first 2-digit: DD-MM-YY, DD/MM/YY, DD.MM.YY
+    const dayFirst2 = text.match(/\b(\d{1,2})[-/.](\d{1,2})[-/.](\d{2})\b/);
+    if (dayFirst2) {
+      const day = parseInt(dayFirst2[1], 10);
+      const month = parseInt(dayFirst2[2], 10);
+      const year = parseInt(dayFirst2[3], 10);
+      if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
+        return `20${String(year).padStart(2, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      }
+    }
+
+    // 4. Day Month Year: 15-Nov-2024, 15 Nov 2024, 15-Nov-24
+    const dayMonthYear = text.match(/\b(\d{1,2})[-\s/.]+([A-Za-z]{3,9})[-\s/.]+((?:20)?\d{2})\b/);
+    if (dayMonthYear) {
+      const m = months[dayMonthYear[2].toLowerCase()];
+      if (m) {
+        const y = dayMonthYear[3].length === 2 ? `20${dayMonthYear[3]}` : dayMonthYear[3];
+        return `${y}-${m}-${dayMonthYear[1].padStart(2, '0')}`;
+      }
+    }
+
+    // 5. Month Day Year: Nov 15, 2024 or November 15, 2024
+    const monthDayYear = text.match(/\b([A-Za-z]{3,9})[-\s/.]+(\d{1,2}),?[-\s/.]+((?:20)?\d{2})\b/);
+    if (monthDayYear) {
+      const m = months[monthDayYear[1].toLowerCase()];
+      if (m) {
+        const y = monthDayYear[3].length === 2 ? `20${monthDayYear[3]}` : monthDayYear[3];
+        return `${y}-${m}-${monthDayYear[2].padStart(2, '0')}`;
+      }
+    }
+
+    return '';
   }
 }
