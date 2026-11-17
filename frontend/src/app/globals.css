@@ -829,7 +829,18 @@ video[hidden] {
   opacity: 1;
 }
 
-/* ===================== DIALOG ===================== */
+/* ===================== DIALOG & MODALS ===================== */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(8, 15, 28, .62);
+  overflow-y: auto;
+}
+
 dialog {
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -839,6 +850,28 @@ dialog {
   width: 92%;
   padding: 22px;
   position: relative;
+}
+
+dialog[open]:not(.modal-backdrop dialog) {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+  z-index: 50;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .35);
+}
+
+.modal-backdrop dialog {
+  position: relative;
+  width: min(460px, 100%);
+  max-width: 460px;
+  max-height: min(90vh, 820px);
+  max-height: min(90dvh, 820px);
+  overflow-y: auto;
+  margin: auto;
+  border-radius: 16px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .28);
 }
 
 dialog::backdrop {

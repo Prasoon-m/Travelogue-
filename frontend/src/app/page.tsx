@@ -1790,72 +1790,76 @@ export default function Home() {
 
       {/* Bill Detail Modal */}
       {modal === 'billDetail' && modalBill && (
-        <dialog open onClick={e => { if (e.target === e.currentTarget) setModal('none'); }}>
-          <button className="x" onClick={() => setModal('none')} aria-label="Close">×</button>
-          <h2>{modalBill.m}</h2>
-          {billFileStatus === 'loading'
-            ? <p className="mut" role="status">Loading bill file…</p>
-            : billFileStatus === 'error'
-              ? <div className="msg err" role="alert">The original bill file could not be loaded.</div>
-              : modalBill.mimeType === 'application/pdf'
-                ? <iframe className="pdf-preview" src={modalBill.img} title="Bill PDF" />
-                : <img className="prev" src={modalBill.img} alt="Bill image" />}
-          <dl>
-            <dt>Date</dt><dd>{fdate(modalBill.date)}</dd>
-            <dt>Bill number</dt><dd>{modalBill.no || 'Not available'}</dd>
-            <dt>Total</dt><dd>{money(modalBill.total, modalBill.cur)}</dd>
-            <dt>Tax</dt><dd>{money(modalBill.tax, modalBill.cur)}</dd>
-            <dt>Items</dt><dd style={{ whiteSpace: 'pre-line' }}>{modalBill.items || 'Not available'}</dd>
-            <dt>Payment</dt><dd>{modalBill.pay || 'Not available'}</dd>
-            <dt>View</dt><dd>{modalBill.cont}</dd>
-            <dt>Category</dt><dd>{modalBill.cat} / {modalBill.sub}</dd>
-            <dt>Type</dt><dd>{modalBill.pers ? 'Personal' : 'Business'}</dd>
-            <dt>Status</dt><dd>{modalBill.st}</dd>
-          </dl>
-          <label htmlFor="mv">Move to view</label>
-          <div className="row">
-            <select id="mv" value={modalMoveTo} onChange={e => setModalMoveTo(e.target.value)}>
-              {conts.map(c => <option key={c}>{c}</option>)}
-            </select>
-            <button className="btn" style={{ flex: '0 0 auto' }} onClick={moveBill}>Move</button>
-          </div>
-          <div className="acts">
-            <button className="btn p ic" onClick={() => { setModal('none'); openShare('b', modalBill.id); }}><ShareIcon />Share</button>
-            <button className="btn" onClick={() => setModal('none')}>Close</button>
-          </div>
-        </dialog>
+        <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) setModal('none'); }}>
+          <dialog open onClick={e => e.stopPropagation()}>
+            <button className="x" onClick={() => setModal('none')} aria-label="Close">×</button>
+            <h2>{modalBill.m}</h2>
+            {billFileStatus === 'loading'
+              ? <p className="mut" role="status">Loading bill file…</p>
+              : billFileStatus === 'error'
+                ? <div className="msg err" role="alert">The original bill file could not be loaded.</div>
+                : modalBill.mimeType === 'application/pdf'
+                  ? <iframe className="pdf-preview" src={modalBill.img} title="Bill PDF" />
+                  : <img className="prev" src={modalBill.img} alt="Bill image" />}
+            <dl>
+              <dt>Date</dt><dd>{fdate(modalBill.date)}</dd>
+              <dt>Bill number</dt><dd>{modalBill.no || 'Not available'}</dd>
+              <dt>Total</dt><dd>{money(modalBill.total, modalBill.cur)}</dd>
+              <dt>Tax</dt><dd>{money(modalBill.tax, modalBill.cur)}</dd>
+              <dt>Items</dt><dd style={{ whiteSpace: 'pre-line' }}>{modalBill.items || 'Not available'}</dd>
+              <dt>Payment</dt><dd>{modalBill.pay || 'Not available'}</dd>
+              <dt>View</dt><dd>{modalBill.cont}</dd>
+              <dt>Category</dt><dd>{modalBill.cat} / {modalBill.sub}</dd>
+              <dt>Type</dt><dd>{modalBill.pers ? 'Personal' : 'Business'}</dd>
+              <dt>Status</dt><dd>{modalBill.st}</dd>
+            </dl>
+            <label htmlFor="mv">Move to view</label>
+            <div className="row">
+              <select id="mv" value={modalMoveTo} onChange={e => setModalMoveTo(e.target.value)}>
+                {conts.map(c => <option key={c}>{c}</option>)}
+              </select>
+              <button className="btn" style={{ flex: '0 0 auto' }} onClick={moveBill}>Move</button>
+            </div>
+            <div className="acts">
+              <button className="btn p ic" onClick={() => { setModal('none'); openShare('b', modalBill.id); }}><ShareIcon />Share</button>
+              <button className="btn" onClick={() => setModal('none')}>Close</button>
+            </div>
+          </dialog>
+        </div>
       )}
 
       {/* Add Bills to View Modal */}
       {modal === 'addBills' && (
-        <dialog open onClick={e => { if (e.target === e.currentTarget) setModal('none'); }}>
-          <button className="x" onClick={() => setModal('none')} aria-label="Close">×</button>
-          <h2>Add bills to {addBillsTo}</h2>
-          <p className="mut sm">Select the bills to move into this view. Each bill belongs to one view, so it leaves its current one.</p>
-          {(() => {
-            const avail = bills.filter(b => b.cont !== addBillsTo && b.st !== 'Processing');
-            return avail.length ? (
-              <div className="pick">
-                {avail.map(b => (
-                  <label key={b.id} className="pk">
-                    <input type="checkbox" className="pick-cb" value={b.id} />
-                    <span className="g"><b>{b.m}</b><span className="sm mut">{fdate(b.date)} · {b.cont}</span></span>
-                    <span className="amt">{money(b.total, b.cur)}</span>
-                  </label>
-                ))}
-              </div>
-            ) : <p className="mut">All your bills are already in this view.</p>;
-          })()}
-          {pkMsg && <div className="msg err">{pkMsg}</div>}
-          <div className="acts">
-            {bills.filter(b => b.cont !== addBillsTo && b.st !== 'Processing').length > 0 && (
-              <button className="btn p" onClick={confirmAddBills}>Add to view</button>
-            )}
-            <button className="btn" onClick={() => setModal('none')}>
-              {bills.filter(b => b.cont !== addBillsTo && b.st !== 'Processing').length > 0 ? 'Skip for now' : 'Close'}
-            </button>
-          </div>
-        </dialog>
+        <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) setModal('none'); }}>
+          <dialog open onClick={e => e.stopPropagation()}>
+            <button className="x" onClick={() => setModal('none')} aria-label="Close">×</button>
+            <h2>Add bills to {addBillsTo}</h2>
+            <p className="mut sm">Select the bills to move into this view. Each bill belongs to one view, so it leaves its current one.</p>
+            {(() => {
+              const avail = bills.filter(b => b.cont !== addBillsTo && b.st !== 'Processing');
+              return avail.length ? (
+                <div className="pick">
+                  {avail.map(b => (
+                    <label key={b.id} className="pk">
+                      <input type="checkbox" className="pick-cb" value={b.id} />
+                      <span className="g"><b>{b.m}</b><span className="sm mut">{fdate(b.date)} · {b.cont}</span></span>
+                      <span className="amt">{money(b.total, b.cur)}</span>
+                    </label>
+                  ))}
+                </div>
+              ) : <p className="mut">All your bills are already in this view.</p>;
+            })()}
+            {pkMsg && <div className="msg err">{pkMsg}</div>}
+            <div className="acts">
+              {bills.filter(b => b.cont !== addBillsTo && b.st !== 'Processing').length > 0 && (
+                <button className="btn p" onClick={confirmAddBills}>Add to view</button>
+              )}
+              <button className="btn" onClick={() => setModal('none')}>
+                {bills.filter(b => b.cont !== addBillsTo && b.st !== 'Processing').length > 0 ? 'Skip for now' : 'Close'}
+              </button>
+            </div>
+          </dialog>
+        </div>
       )}
 
       {/* Share Modal */}
@@ -1940,33 +1944,35 @@ export default function Home() {
 
       {/* Shared Bill Detail Modal (view-only) */}
       {modal === 'sharedBill' && sharedViewBill && (
-        <dialog open onClick={e => { if (e.target === e.currentTarget) setModal('none'); }}>
-          <button className="x" onClick={() => setModal('none')} aria-label="Close">×</button>
-          <h2>{sharedViewBill.m}</h2>
-          {billFileStatus === 'loading'
-            ? <p className="mut" role="status">Loading bill file…</p>
-            : billFileStatus === 'error'
-              ? <div className="msg err" role="alert">The original bill file could not be loaded.</div>
-              : sharedViewBill.mimeType === 'application/pdf'
-                ? <iframe className="pdf-preview" src={sharedViewBill.img} title="Shared bill PDF" />
-                : <img className="prev" src={sharedViewBill.img} alt="Bill image" />}
-          <dl>
-            <dt>Date</dt><dd>{fdate(sharedViewBill.date)}</dd>
-            <dt>Bill number</dt><dd>{sharedViewBill.no || 'Not available'}</dd>
-            <dt>Total</dt><dd>{money(sharedViewBill.total, sharedViewBill.cur)}</dd>
-            <dt>Tax</dt><dd>{money(sharedViewBill.tax, sharedViewBill.cur)}</dd>
-            <dt>Items</dt><dd style={{ whiteSpace: 'pre-line' }}>{sharedViewBill.items || 'Not available'}</dd>
-            <dt>Payment</dt><dd>{sharedViewBill.pay || 'Not available'}</dd>
-            <dt>Category</dt><dd>{sharedViewBill.cat} / {sharedViewBill.sub}</dd>
-            {sharedViewBill.by && <><dt>Shared by</dt><dd>{sharedViewBill.by}</dd></>}
-            {sharedViewBill.grp && <><dt>View</dt><dd>{sharedViewBill.grp}</dd></>}
-          </dl>
-          <p className="mut sm">You can view and download only.</p>
-          <div className="acts">
-            <button className="btn p" onClick={() => void downloadBill(sharedViewBill)}>Download</button>
-            <button className="btn" onClick={() => setModal('none')}>Close</button>
-          </div>
-        </dialog>
+        <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) setModal('none'); }}>
+          <dialog open onClick={e => e.stopPropagation()}>
+            <button className="x" onClick={() => setModal('none')} aria-label="Close">×</button>
+            <h2>{sharedViewBill.m}</h2>
+            {billFileStatus === 'loading'
+              ? <p className="mut" role="status">Loading bill file…</p>
+              : billFileStatus === 'error'
+                ? <div className="msg err" role="alert">The original bill file could not be loaded.</div>
+                : sharedViewBill.mimeType === 'application/pdf'
+                  ? <iframe className="pdf-preview" src={sharedViewBill.img} title="Shared bill PDF" />
+                  : <img className="prev" src={sharedViewBill.img} alt="Bill image" />}
+            <dl>
+              <dt>Date</dt><dd>{fdate(sharedViewBill.date)}</dd>
+              <dt>Bill number</dt><dd>{sharedViewBill.no || 'Not available'}</dd>
+              <dt>Total</dt><dd>{money(sharedViewBill.total, sharedViewBill.cur)}</dd>
+              <dt>Tax</dt><dd>{money(sharedViewBill.tax, sharedViewBill.cur)}</dd>
+              <dt>Items</dt><dd style={{ whiteSpace: 'pre-line' }}>{sharedViewBill.items || 'Not available'}</dd>
+              <dt>Payment</dt><dd>{sharedViewBill.pay || 'Not available'}</dd>
+              <dt>Category</dt><dd>{sharedViewBill.cat} / {sharedViewBill.sub}</dd>
+              {sharedViewBill.by && <><dt>Shared by</dt><dd>{sharedViewBill.by}</dd></>}
+              {sharedViewBill.grp && <><dt>View</dt><dd>{sharedViewBill.grp}</dd></>}
+            </dl>
+            <p className="mut sm">You can view and download only.</p>
+            <div className="acts">
+              <button className="btn p" onClick={() => void downloadBill(sharedViewBill)}>Download</button>
+              <button className="btn" onClick={() => setModal('none')}>Close</button>
+            </div>
+          </dialog>
+        </div>
       )}
     </>
   );

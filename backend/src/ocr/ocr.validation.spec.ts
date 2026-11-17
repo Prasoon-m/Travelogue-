@@ -25,6 +25,43 @@ Paid by UPI`, 92);
   assert.match(result.items.value, /Sandwich 1 — 250\.00/);
 });
 
+test('accepts receipts with 2-digit dates, Net Amount, and Invoice: prefix', () => {
+  const result = ocr.validateRecognizedText(`Blue Tokai Coffee
+TAX INVOICE
+Invoice: BT-88912
+Date: 15/11/24
+Cold Brew 1 220.00
+Croissant 1 180.00
+GST 5% 20.00
+NET AMOUNT: 420.00
+Payment: UPI`, 94);
+
+  assert.equal(result.isReceipt, true);
+  assert.equal(result.merchant.value, 'Blue Tokai Coffee');
+  assert.equal(result.date.value, '2024-11-15');
+  assert.equal(result.billNo.value, 'BT-88912');
+  assert.equal(result.total.value, '420.00');
+  assert.equal(result.tax.value, '20.00');
+  assert.match(result.items.value, /Cold Brew 1 — 220\.00/);
+});
+
+test('accepts receipts with named month date, Order ID, and split TOTAL line', () => {
+  const result = ocr.validateRecognizedText(`Welcome to STARBUCKS COFFEE
+Order ID: SB-9901
+Date: 15-Nov-2024
+Caramel Macchiato 350.00
+TOTAL
+350.00
+PAID BY CREDIT CARD`, 91);
+
+  assert.equal(result.isReceipt, true);
+  assert.equal(result.merchant.value, 'STARBUCKS COFFEE');
+  assert.equal(result.date.value, '2024-11-15');
+  assert.equal(result.billNo.value, 'SB-9901');
+  assert.equal(result.total.value, '350.00');
+  assert.match(result.items.value, /Caramel Macchiato — 350\.00/);
+});
+
 test('rejects OCR text from a personal photo with no bill structure', () => {
   const result = ocr.validateRecognizedText('Green trees beside a lake. Summer holiday with friends.', 90);
 
