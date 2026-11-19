@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y openssl ca-certificates && rm -rf /var/
 COPY package*.json ./
 COPY prisma ./prisma/
 
-RUN npm ci
+RUN npm install
 
 # Generate Prisma Client
 RUN npx prisma generate
