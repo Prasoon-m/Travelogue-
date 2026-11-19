@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  backend:
+    image: ghcr.io/quana-ai/travelogue-backend:latest
+    container_name: travelogue-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - PORT=4000
+      - NODE_ENV=production
+    volumes:
+      - travelogue_db:/app/prisma
+      - travelogue_uploads:/app/uploads
+    networks:
+      - web
+    ports:
+      - "4000:4000"
+
+  frontend:
+    image: ghcr.io/quana-ai/travelogue-frontend:latest
+    container_name: travelogue-frontend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - PORT=3000
+      - NODE_ENV=production
+    networks:
+      - web
+    ports:
+      - "3000:3000"
+
+volumes:
+  travelogue_db:
+    name: travelogue_db
+  travelogue_uploads:
+    name: travelogue_uploads
+
+networks:
+  web:
+    external: true
