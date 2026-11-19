@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   travelogue:
     image: ghcr.io/quana-ai/travelogue:latest
