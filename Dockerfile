@@ -78,3 +78,4 @@ EXPOSE 3000
 
 # Start Supervisor which runs Backend (4000), Frontend (3001), and Nginx (3000)
 CMD ["supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+
